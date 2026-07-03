@@ -1,0 +1,21 @@
+# --- Personal planning docs (kept local, not committed) ---
+CLAUDE.md
+docs/
+
+# --- Dependencies ---
+node_modules/
+.npm/
+
+# --- Env & secrets ---
+.env
+.env.*
+!.env.example
+
+
+
+# --- Logs / misc ---
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
+.vite/
