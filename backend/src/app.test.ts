@@ -2,9 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { HealthResponse } from '@nodefav/shared';
 import { buildApp } from './app.js';
+import { createDb } from './database/db.js';
+
+function makeApp() {
+  return buildApp({ db: createDb(':memory:'), syncToken: 'test-token', logger: false });
+}
 
 test('GET /health returns ok with version and git sha', async () => {
-  const app = buildApp();
+  const app = makeApp();
   const res = await app.inject({ method: 'GET', url: '/health' });
 
   assert.equal(res.statusCode, 200);
@@ -20,11 +25,18 @@ test('GET /health returns ok with version and git sha', async () => {
 test('GET /health reflects GIT_SHA from the environment', async () => {
   process.env.GIT_SHA = 'abc1234def';
   try {
-    const app = buildApp();
+    const app = makeApp();
     const res = await app.inject({ method: 'GET', url: '/health' });
     assert.equal((res.json() as HealthResponse).gitSha, 'abc1234def');
     await app.close();
   } finally {
     delete process.env.GIT_SHA;
   }
+});
+
+test('GET /health requires no auth token', async () => {
+  const app = makeApp();
+  const res = await app.inject({ method: 'GET', url: '/health' });
+  assert.equal(res.statusCode, 200);
+  await app.close();
 });

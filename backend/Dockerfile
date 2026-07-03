@@ -29,6 +29,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/shared ./shared
 COPY --from=build /app/backend/package.json ./backend/
 COPY --from=build /app/backend/dist ./backend/dist
+# SQL migrations run on startup; the migrator resolves ../../drizzle from dist/.
+COPY --from=build /app/backend/drizzle ./backend/drizzle
 WORKDIR /app/backend
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

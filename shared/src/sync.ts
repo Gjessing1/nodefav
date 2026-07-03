@@ -1,0 +1,109 @@
+/** Node kind in the bookmark tree. */
+export type BookmarkType = 'bookmark' | 'folder';
+
+/**
+ * Fields common to every synchronization operation. Operations are
+ * client-generated, uploaded in batches and idempotent via `opId`.
+ */
+export interface SyncOpBase {
+  /** Client-generated unique id — the idempotency key for uploads. */
+  opId: string;
+  /** Stable id of the device/install that produced the op. */
+  deviceId: string;
+  /** Client wall-clock in ms since epoch — input to LWW conflict resolution. */
+  timestamp: number;
+}
+
+export interface CreateOp extends SyncOpBase {
+  type: 'create';
+  /** Parent folder uuid, or null for a root-level node. */
+  parentUuid: string | null;
+  nodeType: BookmarkType;
+  title: string;
+  /** Required for bookmarks, absent for folders. */
+  url?: string;
+  /** Fractional ordering key within the parent (provisional scheme, Phase 4). */
+  sortOrder: string;
+}
+
+export interface UpdateOp extends SyncOpBase {
+  type: 'update';
+  uuid: string;
+  title?: string;
+  url?: string;
+}
+
+export interface MoveOp extends SyncOpBase {
+  type: 'move';
+  uuid: string;
+  parentUuid: string | null;
+  sortOrder: string;
+}
+
+export interface DeleteOp extends SyncOpBase {
+  type: 'delete';
+  uuid: string;
+}
+
+export type SyncOp = CreateOp | UpdateOp | MoveOp | DeleteOp;
+
+/**
+ * Per-op outcome of an upload.
+ * - `applied`: mutated state and was appended to the op log.
+ * - `duplicate`: this opId was applied earlier; original seq/uuid returned.
+ * - `stale`: lost LWW against a newer already-applied op; not logged.
+ * - `rejected`: invalid (unknown uuid, bad parent, cycle, …); not logged.
+ */
+export type OpStatus = 'applied' | 'duplicate' | 'stale' | 'rejected';
+
+export interface OpResult {
+  opId: string;
+  status: OpStatus;
+  /** Target bookmark uuid (server-assigned for creates). */
+  uuid?: string;
+  /** Server sequence number, for applied ops and duplicates of applied ops. */
+  seq?: number;
+  /** Human-readable reason, for rejected ops. */
+  error?: string;
+}
+
+export interface PostOpsRequest {
+  ops: SyncOp[];
+}
+
+export interface PostOpsResponse {
+  results: OpResult[];
+  /** Monotonic server version — the seq of the newest op in the log. */
+  serverVersion: number;
+}
+
+/**
+ * An applied operation as served by `GET /api/ops`. Normalized: creates carry
+ * the server-assigned `uuid`, so replaying the log from 0 reconstructs the tree.
+ */
+export type RemoteOp = SyncOp & { seq: number; uuid: string };
+
+export interface GetOpsResponse {
+  ops: RemoteOp[];
+  serverVersion: number;
+}
+
+export interface BookmarkNode {
+  uuid: string;
+  parentUuid: string | null;
+  type: BookmarkType;
+  title: string;
+  url: string | null;
+  sortOrder: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Server seq of the last op applied to this node. */
+  version: number;
+  /** Present (possibly empty) for folders, absent for bookmarks. */
+  children?: BookmarkNode[];
+}
+
+export interface GetBookmarksResponse {
+  roots: BookmarkNode[];
+  serverVersion: number;
+}
