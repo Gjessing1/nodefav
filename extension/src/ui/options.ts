@@ -1,5 +1,9 @@
 import type { SyncStatus } from '../sync/engine.js';
+import type { RealtimeState } from '../sync/realtime.js';
 import { getSyncInterval, normalizeSyncInterval } from './settings.js';
+
+/** Engine snapshot augmented by the background with the realtime feed state. */
+type UiStatus = SyncStatus & { realtime?: RealtimeState };
 
 const serverUrlInput = document.getElementById('serverUrl') as HTMLInputElement;
 const tokenInput = document.getElementById('token') as HTMLInputElement;
@@ -32,7 +36,7 @@ async function save(): Promise<void> {
 async function syncNow(type: 'nodefav:syncNow' | 'nodefav:reconcile'): Promise<void> {
   message.textContent = type === 'nodefav:reconcile' ? 'Checking consistency…' : 'Syncing…';
   message.className = '';
-  const response = (await chrome.runtime.sendMessage({ type })) as SyncStatus | { error: string };
+  const response = (await chrome.runtime.sendMessage({ type })) as UiStatus | { error: string };
   if ('error' in response) {
     message.textContent = response.error;
     message.className = 'error';
@@ -47,7 +51,7 @@ async function syncNow(type: 'nodefav:syncNow' | 'nodefav:reconcile'): Promise<v
 
 async function refreshStatus(): Promise<void> {
   const response = (await chrome.runtime.sendMessage({ type: 'nodefav:status' })) as
-    SyncStatus | { error: string };
+    UiStatus | { error: string };
   if (!('error' in response)) renderStatus(response);
 }
 
@@ -55,7 +59,7 @@ async function sendChoice(choice: 'keep-local' | 'keep-cloud' | 'merge'): Promis
   message.textContent = 'Applying choice and syncing…';
   message.className = '';
   const response = (await chrome.runtime.sendMessage({ type: 'nodefav:initialChoice', choice })) as
-    SyncStatus | { error: string };
+    UiStatus | { error: string };
   if ('error' in response) {
     message.textContent = response.error;
     message.className = 'error';
@@ -66,7 +70,7 @@ async function sendChoice(choice: 'keep-local' | 'keep-cloud' | 'merge'): Promis
   }
 }
 
-function renderStatus(status: SyncStatus): void {
+function renderStatus(status: UiStatus): void {
   chooser.hidden = !status.pendingInitialChoice;
   const when = (t: number | undefined): string => (t ? new Date(t).toLocaleString() : 'never');
   const rows: Array<[string, string]> = [
@@ -75,6 +79,7 @@ function renderStatus(status: SyncStatus): void {
     ['Queued ops', String(status.queueDepth)],
     ['Mapped bookmarks', String(status.mappingCount)],
     ['Sync cursor', String(status.cursor)],
+    ['Realtime', status.realtime ?? 'off'],
     ['Last sync', when(status.lastSyncAt)],
     ['Last drift check', when(status.lastReconcileAt)],
     ['Drift', status.lastDrift ?? '—'],

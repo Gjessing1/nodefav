@@ -151,11 +151,44 @@ export interface GetChecksumResponse {
   serverVersion: number;
 }
 
+/**
+ * Cloud-side enrichment health of a bookmark's URL (Phase 6 background job):
+ * - `ok`: last fetch succeeded.
+ * - `failing`: recent failures, below the dead-link threshold.
+ * - `dead`: failed the threshold number of consecutive checks.
+ * - `skipped`: not fetchable (non-http scheme); never rechecked.
+ */
+export type LinkHealth = 'ok' | 'failing' | 'dead' | 'skipped';
+
+/** Enrichment record for one bookmark, served by `GET /api/meta`. */
+export interface MetaItem {
+  uuid: string;
+  /** The bookmark's own title/url, for readability of the listing. */
+  title: string;
+  url: string | null;
+  health: LinkHealth;
+  httpStatus: number | null;
+  pageTitle: string | null;
+  faviconUrl: string | null;
+  consecutiveFailures: number;
+  checkedAt: number;
+  okAt: number | null;
+}
+
+export interface GetMetaResponse {
+  items: MetaItem[];
+  serverVersion: number;
+}
+
 /** Basic operational metrics, served by `GET /api/stats`. */
 export interface GetStatsResponse {
   bookmarks: { live: number; deleted: number };
   operations: { total: number; lastAppliedAt: number | null };
   database: { sizeBytes: number };
   retention: { days: number };
+  /** Currently connected `GET /api/events` SSE clients. */
+  realtime: { eventStreams: number };
+  /** Background enrichment progress: checked rows, dead links, unchecked live bookmarks. */
+  enrichment: { checked: number; dead: number; pending: number };
   serverVersion: number;
 }

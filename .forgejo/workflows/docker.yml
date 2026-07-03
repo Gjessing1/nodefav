@@ -64,6 +64,22 @@ jobs:
           docker push "$PUSH_IMAGE:latest"
           docker push "$PUSH_IMAGE:$SHA_TAG"
 
+      # Versioned extension release zip (Phase 6). The extension-zip target reuses the
+      # gated build stage from the image build above, so this is cache-only work; the
+      # zip lands in Forgejo's generic package registry (Packages tab of the repo).
+      # The upload goes through git.gjessing.io — fine here, the zip is tiny (no 413).
+      - name: Package extension
+        run: |
+          SHA_TAG="${GITHUB_SHA::7}"
+          VERSION=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' extension/src/manifest.json | head -1)
+          docker build -f backend/Dockerfile --target extension-zip \
+            --output type=local,dest=ext-out .
+          FILE="nodefav-extension-$VERSION-$SHA_TAG.zip"
+          mv ext-out/nodefav-extension.zip "$FILE"
+          curl --fail-with-body -sS -u "gjessing1:${{ secrets.REGISTRY_TOKEN }}" \
+            --upload-file "$FILE" \
+            "https://git.gjessing.io/api/packages/gjessing1/generic/nodefav-extension/$VERSION-$SHA_TAG/$FILE"
+
   # Redeploy on the host after a successful main build. Runs against the host daemon
   # via the mounted Docker socket; the deploy project (compose file + .env) is
   # bind-mounted into the job by the runner.

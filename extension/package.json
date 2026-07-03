@@ -1,6 +1,6 @@
 {
   "name": "@nodefav/extension",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "MV3 browser extension — the invisible synchronization layer.",

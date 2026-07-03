@@ -53,5 +53,28 @@ export const operations = sqliteTable(
   ],
 );
 
+/**
+ * Cloud-side enrichment written by the Phase 6 background job — never synced
+ * into native bookmark fields (metadata lives in the cloud only). One row per
+ * checked bookmark; rows ride along on the bookmark's hard delete (purge).
+ */
+export const bookmarkMeta = sqliteTable('bookmark_meta', {
+  uuid: text('uuid')
+    .primaryKey()
+    .references(() => bookmarks.uuid, { onDelete: 'cascade' }),
+  /** Link health: ok, failing (recent errors), dead (persistent), skipped (non-http). */
+  health: text('health', { enum: ['ok', 'failing', 'dead', 'skipped'] }).notNull(),
+  /** HTTP status of the last attempt; null when the request itself failed. */
+  httpStatus: integer('http_status'),
+  pageTitle: text('page_title'),
+  faviconUrl: text('favicon_url'),
+  consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+  /** Last attempt (ms since epoch) — drives the recheck schedule. */
+  checkedAt: integer('checked_at').notNull(),
+  /** Last successful fetch, null if the URL never answered. */
+  okAt: integer('ok_at'),
+});
+
 export type BookmarkRow = typeof bookmarks.$inferSelect;
 export type OperationRow = typeof operations.$inferSelect;
+export type BookmarkMetaRow = typeof bookmarkMeta.$inferSelect;

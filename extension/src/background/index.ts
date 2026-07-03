@@ -2,6 +2,7 @@ import { ApiClient } from '../api/client.js';
 import { chromeBookmarksApi } from '../chrome/bookmarksApi.js';
 import { idbStores } from '../storage/idb.js';
 import { SyncEngine } from '../sync/engine.js';
+import { RealtimeClient } from '../sync/realtime.js';
 import { getSyncInterval } from '../ui/settings.js';
 
 const engine = new SyncEngine({
@@ -16,6 +17,34 @@ const engine = new SyncEngine({
   },
   now: () => Date.now(),
   newId: () => crypto.randomUUID(),
+  log: (message, detail) => console.warn(`[nodefav] ${message}`, detail ?? ''),
+});
+
+/**
+ * Realtime feed (Phase 6): pushes the server version within a second of any
+ * remote change; the sync itself still runs through the normal engine cycle.
+ * Purely additive — the periodic alarm below stays on as the polling fallback
+ * whenever the stream (or the service worker) is down.
+ */
+const realtime = new RealtimeClient({
+  getConfig: async () => {
+    const { serverUrl, token } = (await chrome.storage.local.get(['serverUrl', 'token'])) as {
+      serverUrl?: string;
+      token?: string;
+    };
+    return serverUrl && token ? { serverUrl, token } : null;
+  },
+  onVersion: (serverVersion) => {
+    engine
+      .status()
+      .then((status) => {
+        if (serverVersion > status.cursor) syncSoon();
+      })
+      .catch((error: unknown) => console.warn('[nodefav] realtime status check failed', error));
+  },
+  // Any extension-API call resets the MV3 idle timer, keeping the worker (and
+  // with it the stream) alive while the connection is healthy.
+  keepalive: () => void chrome.runtime.getPlatformInfo(),
   log: (message, detail) => console.warn(`[nodefav] ${message}`, detail ?? ''),
 });
 
@@ -79,17 +108,29 @@ async function scheduleAlarm(): Promise<void> {
 function bootstrap(): void {
   void scheduleAlarm();
   void syncAndBadge();
+  realtime.ensureConnected();
 }
 chrome.runtime.onInstalled.addListener(bootstrap);
 chrome.runtime.onStartup.addListener(bootstrap);
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === SYNC_ALARM) void syncAndBadge();
+  if (alarm.name !== SYNC_ALARM) return;
+  void syncAndBadge();
+  // The alarm doubles as the reconnect backstop: a killed service worker takes
+  // the stream with it, and this wake-up brings it back.
+  realtime.ensureConnected();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if ('syncIntervalMinutes' in changes) void scheduleAlarm();
-  if ('serverUrl' in changes || 'token' in changes) syncSoon();
+  if ('serverUrl' in changes || 'token' in changes) {
+    syncSoon();
+    realtime.restart();
+  }
 });
+
+// Every service-worker start (not just install/startup — also event wake-ups)
+// runs this top level, so the stream comes back as soon as the worker does.
+realtime.ensureConnected();
 
 // Options/popup RPC: status snapshot, manual sync, drift check, first-sync merge choice.
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
@@ -98,7 +139,10 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
     work
       .then(() => refreshBadge())
       .then(() => engine.status())
-      .then(sendResponse, (error) => sendResponse({ error: String(error) }));
+      .then(
+        (status) => sendResponse({ ...status, realtime: realtime.state }),
+        (error) => sendResponse({ error: String(error) }),
+      );
   };
   if (type === 'nodefav:status') {
     respondWithStatus(Promise.resolve());

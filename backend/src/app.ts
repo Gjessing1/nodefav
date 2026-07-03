@@ -5,6 +5,7 @@ import type { HealthResponse } from '@nodefav/shared';
 import { syncRoutes } from './api/syncRoutes.js';
 import type { Db } from './database/db.js';
 import { DEFAULT_RETENTION_DAYS } from './jobs/retention.js';
+import { createVersionBus } from './sync/events.js';
 
 // Resolves to backend/package.json both from src/ (dev, tests) and dist/ (runtime).
 const pkg = createRequire(import.meta.url)('../package.json') as { version: string };
@@ -32,7 +33,8 @@ export function buildApp({
     };
   });
 
-  app.register((instance) => syncRoutes(instance, { db, syncToken, retentionDays }), {
+  const bus = createVersionBus();
+  app.register((instance) => syncRoutes(instance, { db, syncToken, retentionDays, bus }), {
     prefix: '/api',
   });
 

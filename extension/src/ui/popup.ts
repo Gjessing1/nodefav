@@ -1,5 +1,9 @@
 import type { SyncStatus } from '../sync/engine.js';
+import type { RealtimeState } from '../sync/realtime.js';
 import { getSyncInterval } from './settings.js';
+
+/** Engine snapshot augmented by the background with the realtime feed state. */
+type UiStatus = SyncStatus & { realtime?: RealtimeState };
 
 const statusList = document.getElementById('status') as HTMLDListElement;
 const message = document.getElementById('message') as HTMLParagraphElement;
@@ -12,11 +16,12 @@ function ago(timestamp: number | undefined): string {
   return new Date(timestamp).toLocaleString();
 }
 
-async function render(status: SyncStatus): Promise<void> {
+async function render(status: UiStatus): Promise<void> {
   const interval = await getSyncInterval();
   const rows: Array<[string, string, boolean]> = [
     ['Last sync', ago(status.lastSyncAt), false],
     ['Queued edits', String(status.queueDepth), false],
+    ['Realtime', status.realtime ?? 'off', false],
     ['Sync interval', `${interval} min`, false],
     ['Drift', status.lastDrift ?? 'none found', false],
     ...(status.pendingInitialChoice
@@ -39,7 +44,7 @@ async function render(status: SyncStatus): Promise<void> {
 }
 
 async function refresh(type: 'nodefav:status' | 'nodefav:syncNow'): Promise<void> {
-  const response = (await chrome.runtime.sendMessage({ type })) as SyncStatus | { error: string };
+  const response = (await chrome.runtime.sendMessage({ type })) as UiStatus | { error: string };
   if ('error' in response) {
     message.textContent = response.error;
     message.className = 'error';
