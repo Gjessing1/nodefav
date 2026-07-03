@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+data
+drizzle
+*.sqlite
+CLAUDE.md
+docs
+package-lock.json

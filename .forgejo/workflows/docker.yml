@@ -1,0 +1,86 @@
+# Builds the backend image, pushes it to Forgejo's built-in container registry,
+# then redeploys on the host. Replicates maily's proven workflow.
+#
+# Notes specific to this runner (host-Docker-socket model):
+# - `runs-on: docker` -> catthehacker/ubuntu:act-latest, which has the docker CLI.
+# - docker build/push run against the HOST daemon via the mounted socket.
+# - Pushes go to localhost:3000 (Forgejo's host-published HTTP port) rather than
+#   git.gjessing.io, because Caddy 413s large layer uploads. Registry storage is
+#   hostname-agnostic, so the image is still *pulled* as git.gjessing.io/... as usual.
+# - Auth is a PAT with write:package stored as the REGISTRY_TOKEN repo secret; the
+#   automatic GITHUB_TOKEN only gets package *read* on this instance.
+name: docker
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  # Public name — what deployments pull (HTTPS via Caddy).
+  IMAGE: git.gjessing.io/gjessing1/nodefav-backend
+  # Push name — straight to Forgejo's host-published port, avoiding Caddy.
+  PUSH_IMAGE: localhost:3000/gjessing1/nodefav-backend
+
+jobs:
+  # Single job: the quality gate (format, lint, types, tests) lives INSIDE the image
+  # build (backend/Dockerfile), so there is no separate `verify` job and dependencies
+  # are installed exactly once per push. Caching is handled by the host BuildKit
+  # daemon: the `npm ci` layer is reused whenever package-lock.json is unchanged.
+  build-and-push:
+    runs-on: docker
+    permissions:
+      contents: read
+      packages: write # not sufficient alone on this instance; push uses REGISTRY_TOKEN (see auth step)
+    env:
+      DOCKER_BUILDKIT: '1' # required for the Dockerfile's RUN --mount=type=cache npm cache
+    steps:
+      - uses: actions/checkout@v4
+
+      # Written directly instead of `docker login`: login pings the registry from the job
+      # container (where localhost:3000 is unreachable), but the push runs on the host daemon
+      # (where it works).
+      - name: Registry auth
+        run: |
+          mkdir -p ~/.docker
+          auth=$(printf 'gjessing1:%s' "${{ secrets.REGISTRY_TOKEN }}" | base64 -w0)
+          printf '{"auths":{"localhost:3000":{"auth":"%s"}}}' "$auth" > ~/.docker/config.json
+
+      - name: Build image
+        # --progress=plain so the verbose npm output is readable in the run log. The build
+        # runs the quality gate; a failure here means nothing is pushed. Tagged with both
+        # the public pull name and the localhost push name so the layers are shared.
+        run: |
+          SHA_TAG="${GITHUB_SHA::7}"
+          docker build --progress=plain -f backend/Dockerfile \
+            --build-arg GIT_SHA="$GITHUB_SHA" \
+            -t "$IMAGE:latest" -t "$IMAGE:$SHA_TAG" \
+            -t "$PUSH_IMAGE:latest" -t "$PUSH_IMAGE:$SHA_TAG" .
+
+      - name: Push image
+        run: |
+          SHA_TAG="${GITHUB_SHA::7}"
+          docker push "$PUSH_IMAGE:latest"
+          docker push "$PUSH_IMAGE:$SHA_TAG"
+
+  # Redeploy on the host after a successful main build. Runs against the host daemon
+  # via the mounted Docker socket; the deploy project (compose file + .env) is
+  # bind-mounted into the job by the runner.
+  deploy:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    runs-on: docker
+    env:
+      DEPLOY_DIR: /home/gjessing/docker/nodefav
+    steps:
+      - name: Registry auth
+        run: |
+          mkdir -p ~/.docker
+          auth=$(printf 'gjessing1:%s' "${{ secrets.REGISTRY_TOKEN }}" | base64 -w0)
+          printf '{"auths":{"git.gjessing.io":{"auth":"%s"}}}' "$auth" > ~/.docker/config.json
+      - name: Pull and restart
+        run: |
+          cd "$DEPLOY_DIR"
+          docker compose pull
+          docker compose up -d --remove-orphans

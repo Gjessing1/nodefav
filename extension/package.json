@@ -1,0 +1,7 @@
+{
+  "name": "@nodefav/extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MV3 browser extension — scaffolded in Phase 2 of the roadmap."
+}
