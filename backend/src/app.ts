@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type { HealthResponse } from '@nodefav/shared';
 import { syncRoutes } from './api/syncRoutes.js';
 import type { Db } from './database/db.js';
+import { DEFAULT_RETENTION_DAYS } from './jobs/retention.js';
 
 // Resolves to backend/package.json both from src/ (dev, tests) and dist/ (runtime).
 const pkg = createRequire(import.meta.url)('../package.json') as { version: string };
@@ -11,10 +12,16 @@ const pkg = createRequire(import.meta.url)('../package.json') as { version: stri
 export interface AppOptions {
   db: Db;
   syncToken: string;
+  retentionDays?: number;
   logger?: boolean;
 }
 
-export function buildApp({ db, syncToken, logger = true }: AppOptions): FastifyInstance {
+export function buildApp({
+  db,
+  syncToken,
+  retentionDays = DEFAULT_RETENTION_DAYS,
+  logger = true,
+}: AppOptions): FastifyInstance {
   const app = Fastify({ logger });
 
   app.get('/health', (): HealthResponse => {
@@ -25,7 +32,9 @@ export function buildApp({ db, syncToken, logger = true }: AppOptions): FastifyI
     };
   });
 
-  app.register((instance) => syncRoutes(instance, { db, syncToken }), { prefix: '/api' });
+  app.register((instance) => syncRoutes(instance, { db, syncToken, retentionDays }), {
+    prefix: '/api',
+  });
 
   return app;
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "nodefav",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Invisible bookmark synchronization to your own cloud.",
   "minimum_chrome_version": "120",
   "permissions": ["bookmarks", "storage", "alarms"],
@@ -9,6 +9,10 @@
   "background": {
     "service_worker": "background.js",
     "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "nodefav"
   },
   "options_page": "options.html"
 }

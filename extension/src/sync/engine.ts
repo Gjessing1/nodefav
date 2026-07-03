@@ -5,6 +5,7 @@ import type { EngineEnv } from './context.js';
 import { applyInitialChoice, ensureInitialized, reconcileRoots } from './initial.js';
 import type { InitialChoice } from './initial.js';
 import { pull } from './puller.js';
+import { reconcile } from './reconcile.js';
 import { flush } from './uploader.js';
 
 export interface SyncStatus {
@@ -17,10 +18,16 @@ export interface SyncStatus {
   cursor: number;
   lastSyncAt: number | undefined;
   lastError: string | undefined;
+  lastReconcileAt: number | undefined;
+  /** Summary of the drift the last reconciliation found; undefined while clean. */
+  lastDrift: string | undefined;
 }
 
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 15 * 60_000;
+
+/** Drift detection is a backstop — rare and cheap, not a sync mechanism. */
+const RECONCILE_INTERVAL_MS = 6 * 60 * 60_000;
 
 /**
  * How long an unconsumed expected-echo record may live. Echoes normally arrive
@@ -73,8 +80,10 @@ export class SyncEngine {
    * exponential backoff (respected by periodic alarms, overridden by `force`)
    * and are surfaced via status().
    */
-  sync(options?: { force?: boolean }): Promise<void> {
-    return this.run(() => this.cycle(options?.force === true, undefined));
+  sync(options?: { force?: boolean; reconcile?: boolean }): Promise<void> {
+    return this.run(() =>
+      this.cycle(options?.force === true, undefined, options?.reconcile === true),
+    );
   }
 
   /**
@@ -82,10 +91,14 @@ export class SyncEngine {
    * forced cycle so the outcome uploads/materializes immediately.
    */
   resolveInitialChoice(choice: InitialChoice): Promise<void> {
-    return this.run(() => this.cycle(true, choice));
+    return this.run(() => this.cycle(true, choice, false));
   }
 
-  private async cycle(force: boolean, choice: InitialChoice | undefined): Promise<void> {
+  private async cycle(
+    force: boolean,
+    choice: InitialChoice | undefined,
+    reconcileRequested: boolean,
+  ): Promise<void> {
     const meta = this.ctx.stores.meta;
     if (!force) {
       const nextAttemptAt = (await meta.get<number>(META.nextAttemptAt)) ?? 0;
@@ -98,6 +111,7 @@ export class SyncEngine {
       if (await pull(this.ctx)) {
         await reconcileRoots(this.ctx);
         await flush(this.ctx);
+        await this.maybeReconcile(reconcileRequested);
       }
       const purged = await this.ctx.stores.echoes.purgeOlderThan(this.ctx.now() - ECHO_TTL_MS);
       if (purged > 0) this.ctx.log(`purged ${purged} expired echo record(s)`);
@@ -114,6 +128,47 @@ export class SyncEngine {
       );
       await meta.set(META.lastError, String(error));
       this.ctx.log('sync failed', error);
+    }
+  }
+
+  /**
+   * Drift-detection backstop, on its RECONCILE_INTERVAL_MS clock (or forced
+   * from the options page). Missed-upload drift flushes + pulls, then verifies
+   * with a second pass. Skips don't advance the clock, so a busy cycle simply
+   * retries on the next one.
+   */
+  private async maybeReconcile(requested: boolean): Promise<void> {
+    const meta = this.ctx.stores.meta;
+    const last = (await meta.get<number>(META.lastReconcileAt)) ?? 0;
+    if (!requested && this.ctx.now() - last < RECONCILE_INTERVAL_MS) return;
+
+    let queued = 0;
+    let outcome = await reconcile(this.ctx);
+    if (outcome.status === 'uploads-queued') {
+      queued = outcome.queued;
+      await flush(this.ctx);
+      if (await pull(this.ctx)) outcome = await reconcile(this.ctx);
+    }
+    if (outcome.status === 'skipped') {
+      this.ctx.log(`reconcile skipped: ${outcome.reason}`);
+      if (queued === 0) return;
+    }
+    await meta.set(META.lastReconcileAt, this.ctx.now());
+
+    const drift: string[] = [];
+    if (queued > 0) drift.push(`re-uploaded ${queued} unsynced local subtree(s)`);
+    if (outcome.status === 'repaired') {
+      drift.push(
+        `repaired ${outcome.repaired} drifted item(s)` +
+          (outcome.residualDrift ? ' — residual drift, will retry' : ''),
+      );
+    }
+    if (drift.length === 0) {
+      await meta.remove(META.lastDrift);
+    } else {
+      const summary = `${drift.join('; ')} (${new Date(this.ctx.now()).toISOString()})`;
+      await meta.set(META.lastDrift, summary);
+      this.ctx.log(`reconcile: ${summary}`);
     }
   }
 
@@ -134,6 +189,8 @@ export class SyncEngine {
       cursor: (await meta.get<number>(META.cursor)) ?? 0,
       lastSyncAt: await meta.get<number>(META.lastSyncAt),
       lastError: await meta.get<string>(META.lastError),
+      lastReconcileAt: await meta.get<number>(META.lastReconcileAt),
+      lastDrift: await meta.get<string>(META.lastDrift),
     };
   }
 }

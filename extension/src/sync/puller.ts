@@ -33,7 +33,8 @@ export async function pull(ctx: EngineEnv): Promise<boolean> {
   }
 }
 
-async function applyRemoteOp(ctx: EngineEnv, op: RemoteOp): Promise<void> {
+/** Applies one already-logged (or synthesized — reconciliation) op natively. */
+export async function applyRemoteOp(ctx: EngineEnv, op: RemoteOp): Promise<void> {
   switch (op.type) {
     case 'create':
       return applyCreate(ctx, op);

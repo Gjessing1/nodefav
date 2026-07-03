@@ -107,3 +107,55 @@ export interface GetBookmarksResponse {
   roots: BookmarkNode[];
   serverVersion: number;
 }
+
+/** A soft-deleted node awaiting purge, as served by `GET /api/trash`. */
+export interface TrashItem {
+  uuid: string;
+  /** Parent at deletion time; may itself be deleted or already purged. */
+  parentUuid: string | null;
+  type: BookmarkType;
+  title: string;
+  url: string | null;
+  sortOrder: string;
+  deletedAt: number;
+}
+
+export interface GetTrashResponse {
+  items: TrashItem[];
+  serverVersion: number;
+}
+
+export interface PostRestoreRequest {
+  uuid: string;
+}
+
+/**
+ * Restore brings back the node plus everything soft-deleted by the same
+ * cascade, reparenting to the nearest live ancestor (root as last resort).
+ * It propagates to clients as synthetic create ops appended to the log.
+ */
+export interface PostRestoreResponse {
+  /** Number of nodes brought back (the node itself + cascaded descendants). */
+  restored: number;
+  serverVersion: number;
+}
+
+/** Reconciliation input, served by `GET /api/checksum` (see shared/checksum.ts). */
+export interface GetChecksumResponse {
+  /** treeChecksum() over every live non-root node. */
+  checksum: string;
+  /** Number of live non-root nodes covered by the checksum. */
+  count: number;
+  /** Uuids of live root-level nodes — excluded from the checksum on both sides. */
+  rootUuids: string[];
+  serverVersion: number;
+}
+
+/** Basic operational metrics, served by `GET /api/stats`. */
+export interface GetStatsResponse {
+  bookmarks: { live: number; deleted: number };
+  operations: { total: number; lastAppliedAt: number | null };
+  database: { sizeBytes: number };
+  retention: { days: number };
+  serverVersion: number;
+}

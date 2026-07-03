@@ -5,14 +5,22 @@ export type {
   CreateOp,
   DeleteOp,
   GetBookmarksResponse,
+  GetChecksumResponse,
   GetOpsResponse,
+  GetStatsResponse,
+  GetTrashResponse,
   MoveOp,
   OpResult,
   OpStatus,
   PostOpsRequest,
   PostOpsResponse,
+  PostRestoreRequest,
+  PostRestoreResponse,
   RemoteOp,
   SyncOp,
   SyncOpBase,
+  TrashItem,
   UpdateOp,
 } from './sync.js';
+export type { ChecksumEntry } from './checksum.js';
+export { checksumEntriesFromTree, treeChecksum } from './checksum.js';

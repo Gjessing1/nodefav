@@ -12,6 +12,9 @@ COPY extension/package.json ./extension/
 RUN --mount=type=cache,target=/root/.npm \
   npm ci --workspaces --include-workspace-root --no-audit --no-fund --prefer-offline
 COPY . .
+# Shared ships compiled JS (its types resolve straight from src): build it first so
+# the runtime import in the backend and the tests in the gate can load it.
+RUN npm run build -w @nodefav/shared
 # Quality gate baked into the image build: format, lint, types and unit tests. If any
 # fail the build fails, so nothing gets tagged or pushed.
 RUN npm run format:check && npm run lint && npm run typecheck && npm test

@@ -28,6 +28,10 @@ export const META = {
   nextAttemptAt: 'nextAttemptAt',
   /** Both sides non-empty at first sync — waiting for the user's merge choice. */
   pendingChoice: 'pendingChoice',
+  /** When the drift-detection pass last completed (skips don't count). */
+  lastReconcileAt: 'lastReconcileAt',
+  /** Human-readable summary of the last drift found; absent while clean. */
+  lastDrift: 'lastDrift',
 } as const;
 
 export async function getDeviceId(ctx: EngineEnv): Promise<string> {

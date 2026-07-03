@@ -274,7 +274,7 @@ export async function reconcileRoots(ctx: EngineEnv): Promise<void> {
 }
 
 /** Parents before children, so upload order equals queue order. */
-async function enqueueSubtree(
+export async function enqueueSubtree(
   ctx: EngineEnv,
   node: BookmarkNodeLite,
   parentBrowserId: string,

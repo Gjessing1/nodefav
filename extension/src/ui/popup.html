@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>nodefav</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        min-width: 17rem;
+        margin: 0;
+        padding: 0.8rem 1rem;
+        color: #1a1a1a;
+        font-size: 0.85rem;
+      }
+      h1 {
+        font-size: 1rem;
+        margin: 0 0 0.5rem;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.15rem 0.8rem;
+        margin: 0 0 0.7rem;
+      }
+      dt {
+        font-weight: 600;
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .buttons {
+        display: flex;
+        gap: 0.5rem;
+      }
+      button {
+        padding: 0.3rem 0.8rem;
+        font: inherit;
+      }
+      .error {
+        color: #b00020;
+      }
+      #message {
+        min-height: 1rem;
+        margin: 0.5rem 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>nodefav</h1>
+    <dl id="status"></dl>
+    <div class="buttons">
+      <button id="syncNow">Sync now</button>
+      <button id="openOptions">Options</button>
+    </div>
+    <p id="message"></p>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

@@ -7,6 +7,7 @@ await build({
   entryPoints: {
     background: 'src/background/index.ts',
     options: 'src/ui/options.ts',
+    popup: 'src/ui/popup.ts',
   },
   bundle: true,
   format: 'esm',
@@ -19,3 +20,4 @@ await build({
 mkdirSync('dist', { recursive: true });
 copyFileSync('src/manifest.json', 'dist/manifest.json');
 copyFileSync('src/ui/options.html', 'dist/options.html');
+copyFileSync('src/ui/popup.html', 'dist/popup.html');

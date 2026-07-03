@@ -1,6 +1,8 @@
+import { checksumEntriesFromTree, treeChecksum } from '@nodefav/shared';
 import type {
   BookmarkNode,
   GetBookmarksResponse,
+  GetChecksumResponse,
   GetOpsResponse,
   OpResult,
   PostOpsResponse,
@@ -84,6 +86,17 @@ export class FakeSyncServer implements SyncApi {
           ...(n.type === 'folder' ? { children: build(n.uuid) } : {}),
         }));
     return Promise.resolve({ roots: build(null), serverVersion: this.log.length });
+  }
+
+  async getChecksum(): Promise<GetChecksumResponse> {
+    const { roots, serverVersion } = await this.getBookmarks();
+    const entries = checksumEntriesFromTree(roots);
+    return {
+      checksum: treeChecksum(entries),
+      count: entries.length,
+      rootUuids: roots.map((root) => root.uuid).sort(),
+      serverVersion,
+    };
   }
 
   private applyOne(op: SyncOp): OpResult {

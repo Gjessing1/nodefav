@@ -1,5 +1,6 @@
 import type {
   GetBookmarksResponse,
+  GetChecksumResponse,
   GetOpsResponse,
   PostOpsResponse,
   SyncOp,
@@ -10,6 +11,7 @@ export interface SyncApi {
   postOps(ops: SyncOp[]): Promise<PostOpsResponse>;
   getOps(since: number, limit: number): Promise<GetOpsResponse>;
   getBookmarks(): Promise<GetBookmarksResponse>;
+  getChecksum(): Promise<GetChecksumResponse>;
 }
 
 export interface ServerConfig {
@@ -48,6 +50,10 @@ export class ApiClient implements SyncApi {
 
   getBookmarks(): Promise<GetBookmarksResponse> {
     return this.request('GET', '/api/bookmarks');
+  }
+
+  getChecksum(): Promise<GetChecksumResponse> {
+    return this.request('GET', '/api/checksum');
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

@@ -76,9 +76,16 @@
     <input id="serverUrl" type="url" placeholder="https://nodefav.example.com" />
     <label for="token">Token</label>
     <input id="token" type="password" autocomplete="off" />
+    <label for="syncInterval">Sync interval (minutes)</label>
+    <input id="syncInterval" type="number" min="1" max="60" step="1" />
+    <p class="hint">
+      How often the background alarm checks the cloud (1–60 minutes). Local edits always sync within
+      seconds regardless.
+    </p>
     <div class="buttons">
       <button id="save">Save</button>
       <button id="syncNow">Sync now</button>
+      <button id="reconcile">Check consistency</button>
     </div>
     <p id="message"></p>
     <section id="chooser" hidden>
