@@ -182,7 +182,39 @@ test('ops that can never resolve are dropped, not retried forever', async () => 
   assert.equal(h.server.opCount(), opsBefore);
 });
 
-test('refuses to initialize when both sides already have bookmarks', async () => {
+test('precision exhaustion triggers a rebalance; order survives and syncs', async () => {
+  const fake = new FakeBookmarks();
+  const h = createHarness({ fake });
+  await h.engine.sync();
+
+  // Always inserting at the top repeatedly halves the same gap, growing keys
+  // one digit per ~6 inserts until the threshold trips (at insert 145).
+  const titles: string[] = [];
+  for (let i = 0; i < 150; i += 1) {
+    await fake.create({ parentId: '1', index: 0, title: `b${i}`, url: `https://x.example/${i}` });
+    titles.unshift(`b${i}`);
+  }
+  await h.engine.idle();
+  await h.engine.sync();
+
+  assert.ok(
+    h.logged.some((line) => line.includes('rebalancing')),
+    'a rebalance happened',
+  );
+  for (const mapping of await h.stores.mappings.all()) {
+    assert.ok(
+      mapping.sortOrder.length <= 24,
+      `key short after rebalance: "${mapping.sortOrder}" (${mapping.sortOrder.length})`,
+    );
+  }
+  assert.deepEqual(await serverSnapshot(h.server), fake.snapshot());
+  assert.deepEqual(
+    fake.snapshot()[0]?.children?.map((c) => (c as { title: string }).title),
+    titles,
+  );
+});
+
+test('waits for a merge choice when both sides already have bookmarks', async () => {
   const seedServer = createHarness({});
   await seedServer.fake.create({ parentId: '1', title: 'Cloud', url: 'https://cloud.example/' });
   await seedServer.engine.sync();
@@ -194,6 +226,7 @@ test('refuses to initialize when both sides already have bookmarks', async () =>
 
   const status = await h.engine.status();
   assert.equal(status.initialized, false);
-  assert.match(status.lastError ?? '', /Phase 4/);
+  assert.equal(status.pendingInitialChoice, true);
+  assert.match(status.lastError ?? '', /options/);
   assert.equal(status.queueDepth, 0);
 });

@@ -252,6 +252,36 @@ test('delete is soft and cascades to descendants', async () => {
   await app.close();
 });
 
+test('delete wins over a concurrent later edit: no resurrection', async () => {
+  const { app } = makeApp();
+  const created = await postOps(app, [createFolder('T'), createBookmark('doomed')]);
+  const folderUuid = created.results[0]!.uuid!;
+  const uuid = created.results[1]!.uuid!;
+
+  await postOps(app, [op({ type: 'delete', uuid, timestamp: 5_000 })]);
+
+  // Concurrent edits with NEWER timestamps arriving after the delete are
+  // accepted into the log (they survive onto the trashed row for Phase 5
+  // restore) but never resurrect the bookmark.
+  const late = await postOps(app, [
+    op({ type: 'update', uuid, title: 'edited late', timestamp: 9_000 }),
+    op({ type: 'move', uuid, parentUuid: folderUuid, sortOrder: 'm0', timestamp: 9_001 }),
+  ]);
+  assert.deepEqual(
+    late.results.map((r) => r.status),
+    ['applied', 'applied'],
+  );
+
+  const { roots } = await getTree(app);
+  assert.deepEqual(
+    roots.map((r) => r.title),
+    ['T'],
+  );
+  assert.equal(roots[0]!.children!.length, 0, 'deleted node did not reappear');
+
+  await app.close();
+});
+
 test('GET /api/ops?since= paginates by server seq', async () => {
   const { app } = makeApp();
   await postOps(app, [createBookmark('a'), createBookmark('b'), createBookmark('c')]);

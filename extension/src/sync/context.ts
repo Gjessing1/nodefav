@@ -26,6 +26,8 @@ export const META = {
   lastError: 'lastError',
   failureCount: 'failureCount',
   nextAttemptAt: 'nextAttemptAt',
+  /** Both sides non-empty at first sync — waiting for the user's merge choice. */
+  pendingChoice: 'pendingChoice',
 } as const;
 
 export async function getDeviceId(ctx: EngineEnv): Promise<string> {

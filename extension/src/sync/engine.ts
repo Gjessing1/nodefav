@@ -2,13 +2,16 @@ import type { BookmarkNodeLite, ChangeInfo, MoveInfo, RemoveInfo } from '../chro
 import { handleChanged, handleCreated, handleMoved, handleRemoved } from './capture.js';
 import { META } from './context.js';
 import type { EngineEnv } from './context.js';
-import { ensureInitialized, reconcileRoots } from './initial.js';
+import { applyInitialChoice, ensureInitialized, reconcileRoots } from './initial.js';
+import type { InitialChoice } from './initial.js';
 import { pull } from './puller.js';
 import { flush } from './uploader.js';
 
 export interface SyncStatus {
   configured: boolean;
   initialized: boolean;
+  /** True while first-sync setup waits for a keep-local/keep-cloud/merge choice. */
+  pendingInitialChoice: boolean;
   queueDepth: number;
   mappingCount: number;
   cursor: number;
@@ -71,36 +74,47 @@ export class SyncEngine {
    * and are surfaced via status().
    */
   sync(options?: { force?: boolean }): Promise<void> {
-    return this.run(async () => {
-      const meta = this.ctx.stores.meta;
-      if (!options?.force) {
-        const nextAttemptAt = (await meta.get<number>(META.nextAttemptAt)) ?? 0;
-        if (this.ctx.now() < nextAttemptAt) return;
-      }
-      try {
-        if (!(await ensureInitialized(this.ctx))) return;
+    return this.run(() => this.cycle(options?.force === true, undefined));
+  }
+
+  /**
+   * Applies the user's first-sync decision (options page), then runs a full
+   * forced cycle so the outcome uploads/materializes immediately.
+   */
+  resolveInitialChoice(choice: InitialChoice): Promise<void> {
+    return this.run(() => this.cycle(true, choice));
+  }
+
+  private async cycle(force: boolean, choice: InitialChoice | undefined): Promise<void> {
+    const meta = this.ctx.stores.meta;
+    if (!force) {
+      const nextAttemptAt = (await meta.get<number>(META.nextAttemptAt)) ?? 0;
+      if (this.ctx.now() < nextAttemptAt) return;
+    }
+    try {
+      if (choice !== undefined) await applyInitialChoice(this.ctx, choice);
+      if (!(await ensureInitialized(this.ctx))) return;
+      await flush(this.ctx);
+      if (await pull(this.ctx)) {
+        await reconcileRoots(this.ctx);
         await flush(this.ctx);
-        if (await pull(this.ctx)) {
-          await reconcileRoots(this.ctx);
-          await flush(this.ctx);
-        }
-        const purged = await this.ctx.stores.echoes.purgeOlderThan(this.ctx.now() - ECHO_TTL_MS);
-        if (purged > 0) this.ctx.log(`purged ${purged} expired echo record(s)`);
-        await meta.set(META.lastSyncAt, this.ctx.now());
-        await meta.remove(META.lastError);
-        await meta.remove(META.failureCount);
-        await meta.remove(META.nextAttemptAt);
-      } catch (error) {
-        const failures = ((await meta.get<number>(META.failureCount)) ?? 0) + 1;
-        await meta.set(META.failureCount, failures);
-        await meta.set(
-          META.nextAttemptAt,
-          this.ctx.now() + Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS),
-        );
-        await meta.set(META.lastError, String(error));
-        this.ctx.log('sync failed', error);
       }
-    });
+      const purged = await this.ctx.stores.echoes.purgeOlderThan(this.ctx.now() - ECHO_TTL_MS);
+      if (purged > 0) this.ctx.log(`purged ${purged} expired echo record(s)`);
+      await meta.set(META.lastSyncAt, this.ctx.now());
+      await meta.remove(META.lastError);
+      await meta.remove(META.failureCount);
+      await meta.remove(META.nextAttemptAt);
+    } catch (error) {
+      const failures = ((await meta.get<number>(META.failureCount)) ?? 0) + 1;
+      await meta.set(META.failureCount, failures);
+      await meta.set(
+        META.nextAttemptAt,
+        this.ctx.now() + Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS),
+      );
+      await meta.set(META.lastError, String(error));
+      this.ctx.log('sync failed', error);
+    }
   }
 
   /** Resolves once everything currently queued on the mutex has run. */
@@ -114,6 +128,7 @@ export class SyncEngine {
     return {
       configured: (await this.ctx.getApi()) !== null,
       initialized: (await meta.get<boolean>(META.initialized)) === true,
+      pendingInitialChoice: (await meta.get<boolean>(META.pendingChoice)) === true,
       queueDepth: await this.ctx.stores.queue.size(),
       mappingCount: await this.ctx.stores.mappings.size(),
       cursor: (await meta.get<number>(META.cursor)) ?? 0,

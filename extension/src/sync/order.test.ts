@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { keyBetween } from './order.js';
+import { keyBetween, spreadKeys } from './order.js';
 
 test('first key and neighbors', () => {
   const first = keyBetween(null, null);
@@ -72,6 +72,28 @@ test('random insertion fuzz keeps a sorted list sorted', () => {
   }
   const sorted = [...keys].sort();
   assert.deepEqual(keys, sorted);
+});
+
+test('spreadKeys: valid, strictly increasing, short, with room around each key', () => {
+  for (const count of [0, 1, 2, 5, 35, 36, 100, 1000]) {
+    const keys = spreadKeys(count);
+    assert.equal(keys.length, count);
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i] as string;
+      assert.match(key, /^[0-9a-z]*[1-9a-z]$/, `valid key: "${key}"`);
+      assert.ok(key.length <= 3, `short key: "${key}"`);
+      if (i > 0) assert.ok((keys[i - 1] as string) < key, `ordered at ${i}`);
+    }
+    // Fresh midpoints between rebalanced neighbors must stay short.
+    for (let i = 1; i < keys.length; i += 1) {
+      const mid = keyBetween(keys[i - 1] as string, keys[i] as string);
+      assert.ok(mid.length <= 4, `short midpoint "${mid}"`);
+    }
+    if (count > 0) {
+      assert.ok(keyBetween(null, keys[0] as string).length <= 4);
+      assert.ok(keyBetween(keys[count - 1] as string, null).length <= 4);
+    }
+  }
 });
 
 test('rejects invalid inputs', () => {

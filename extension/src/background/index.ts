@@ -54,9 +54,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === SYNC_ALARM) void engine.sync();
 });
 
-// Options-page RPC: status snapshot and manual sync.
+// Options-page RPC: status snapshot, manual sync, first-sync merge choice.
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
-  const type = (message as { type?: string } | null)?.type;
+  const { type, choice } = (message ?? {}) as { type?: string; choice?: string };
   if (type === 'nodefav:status') {
     engine.status().then(sendResponse, (error) => sendResponse({ error: String(error) }));
     return true;
@@ -64,6 +64,17 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   if (type === 'nodefav:syncNow') {
     engine
       .sync({ force: true })
+      .then(() => engine.status())
+      .then(sendResponse, (error) => sendResponse({ error: String(error) }));
+    return true;
+  }
+  if (type === 'nodefav:initialChoice') {
+    if (choice !== 'keep-local' && choice !== 'keep-cloud' && choice !== 'merge') {
+      sendResponse({ error: `unknown choice ${String(choice)}` });
+      return true;
+    }
+    engine
+      .resolveInitialChoice(choice)
       .then(() => engine.status())
       .then(sendResponse, (error) => sendResponse({ error: String(error) }));
     return true;

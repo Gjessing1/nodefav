@@ -54,6 +54,20 @@
       .error {
         color: #b00020;
       }
+      .hint {
+        font-size: 0.85rem;
+        color: #555;
+      }
+      #chooser {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 0 1rem;
+        margin: 1rem 0;
+        background: #fafafa;
+      }
+      #chooser h2 {
+        font-size: 1.05rem;
+      }
     </style>
   </head>
   <body>
@@ -67,6 +81,23 @@
       <button id="syncNow">Sync now</button>
     </div>
     <p id="message"></p>
+    <section id="chooser" hidden>
+      <h2>First sync: bookmarks exist on both sides</h2>
+      <p>
+        This browser and the cloud both already contain bookmarks. Choose how to combine them — this
+        happens once.
+      </p>
+      <div class="buttons">
+        <button id="chooseMerge">Merge both</button>
+        <button id="chooseKeepLocal">Keep this browser’s</button>
+        <button id="chooseKeepCloud">Keep the cloud’s</button>
+      </div>
+      <p class="hint">
+        Merge deduplicates by URL and title within each folder. “Keep this browser’s” moves the
+        current cloud bookmarks to the cloud trash first; “keep the cloud’s” replaces this browser’s
+        bookmarks.
+      </p>
+    </section>
     <h2>Status</h2>
     <dl id="status"></dl>
     <script type="module" src="options.js"></script>

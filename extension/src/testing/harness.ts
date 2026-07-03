@@ -12,6 +12,7 @@ export interface Harness {
   stores: SyncStores;
   engine: SyncEngine;
   logged: string[];
+  now: () => number;
 }
 
 /**
@@ -20,7 +21,13 @@ export interface Harness {
  * does with real chrome.bookmarks events.
  */
 export function createHarness(
-  options: { fake?: FakeBookmarks; server?: FakeSyncServer; stores?: SyncStores } = {},
+  options: {
+    fake?: FakeBookmarks;
+    server?: FakeSyncServer;
+    stores?: SyncStores;
+    /** Injectable clock for deterministic LWW timestamps. */
+    now?: () => number;
+  } = {},
 ): Harness {
   const fake = options.fake ?? new FakeBookmarks();
   const server = options.server ?? new FakeSyncServer();
@@ -30,7 +37,7 @@ export function createHarness(
     bookmarks: fake,
     stores,
     getApi: () => Promise.resolve(server),
-    now: () => Date.now(),
+    now: options.now ?? (() => Date.now()),
     newId: () => crypto.randomUUID(),
     log: (message) => logged.push(message),
   };
@@ -39,7 +46,7 @@ export function createHarness(
   fake.onChanged((id, info) => void engine.handleChanged(id, info));
   fake.onMoved((id, info) => void engine.handleMoved(id, info));
   fake.onRemoved((id, info) => void engine.handleRemoved(id, info));
-  return { fake, server, stores, engine, logged };
+  return { fake, server, stores, engine, logged, now: env.now };
 }
 
 /**
@@ -49,7 +56,12 @@ export function createHarness(
  */
 export function restartWorker(harness: Harness): Harness {
   harness.fake.resetListeners();
-  return createHarness({ fake: harness.fake, server: harness.server, stores: harness.stores });
+  return createHarness({
+    fake: harness.fake,
+    server: harness.server,
+    stores: harness.stores,
+    now: harness.now,
+  });
 }
 
 /** Server-side live tree as plain data, comparable with FakeBookmarks.snapshot(). */

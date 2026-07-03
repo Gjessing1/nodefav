@@ -1,30 +1,32 @@
 import type { RemoteOp } from '@nodefav/shared';
 import type { BookmarkNodeLite } from '../chrome/bookmarksApi.js';
-import { BROWSER_ROOT_ID, META, getDeviceId, isInitialized, syncableRoots } from './context.js';
+import { BROWSER_ROOT_ID, META, isInitialized, syncableRoots } from './context.js';
 import type { EngineEnv } from './context.js';
 
 const PULL_LIMIT = 500;
 
 /**
- * Pulls remote operations past the persisted cursor and applies them to the
- * native tree. The cursor advances after every op, so a service-worker death
- * mid-batch resumes exactly where it stopped; every apply step is idempotent to
- * retry. Loop prevention is two-layered: our own device's ops are skipped
- * outright, and every native mutation is preceded by a *persisted* echo record
- * that the capture handlers will consume instead of re-uploading the event.
- * Returns true once caught up with the server.
+ * Pulls operations past the persisted cursor and applies them to the native
+ * tree. The cursor advances after every op, so a service-worker death
+ * mid-batch resumes exactly where it stopped; every apply step is idempotent
+ * to retry. Own-device ops are NOT skipped: the server's log applied in seq
+ * order always lands on the server's LWW-resolved state, and truncating our
+ * own ops out of the replay would strand us on a concurrent older remote op.
+ * Re-applying an own op is a no-op (idempotence). Loop prevention is the
+ * *persisted* echo record written before every native mutation, which the
+ * capture handlers consume instead of re-uploading the event. Returns true
+ * once caught up with the server.
  */
 export async function pull(ctx: EngineEnv): Promise<boolean> {
   if (!(await isInitialized(ctx))) return false;
   const api = await ctx.getApi();
   if (!api) return false;
-  const deviceId = await getDeviceId(ctx);
 
   for (;;) {
     const cursor = (await ctx.stores.meta.get<number>(META.cursor)) ?? 0;
     const { ops } = await api.getOps(cursor, PULL_LIMIT);
     for (const op of ops) {
-      if (op.deviceId !== deviceId) await applyRemoteOp(ctx, op);
+      await applyRemoteOp(ctx, op);
       await ctx.stores.meta.set(META.cursor, op.seq);
     }
     if (ops.length < PULL_LIMIT) return true;
@@ -92,7 +94,7 @@ async function applyCreate(ctx: EngineEnv, op: RemoteOp & { type: 'create' }): P
     ...(url !== undefined ? { url } : {}),
     sortOrder: op.sortOrder,
   });
-  const index = await indexForSortOrder(ctx, parentBrowserId, op.sortOrder, undefined);
+  const index = await indexForSortOrder(ctx, parentBrowserId, op.sortOrder, op.uuid, undefined);
   const node = await ctx.bookmarks.create({
     parentId: parentBrowserId,
     index,
@@ -156,7 +158,13 @@ async function applyMove(ctx: EngineEnv, op: RemoteOp & { type: 'move' }): Promi
     return; // already there (crash retry)
   }
 
-  const index = await indexForSortOrder(ctx, parent.browserId, op.sortOrder, mapping.browserId);
+  const index = await indexForSortOrder(
+    ctx,
+    parent.browserId,
+    op.sortOrder,
+    op.uuid,
+    mapping.browserId,
+  );
   const echo = await ctx.stores.echoes.add({
     action: 'move',
     uuid: op.uuid,
@@ -233,20 +241,29 @@ async function findUnmappedMatch(
 
 /**
  * Native-tree index for a fractional key: the number of siblings that sort
- * before it. Siblings without a mapped key (brand-new local nodes) keep their
- * position by not being counted.
+ * before it by (sortOrder, uuid) — the uuid tie-break matches the server's
+ * tree ordering, so devices that generated identical keys concurrently still
+ * converge on the same visible order. Siblings without a mapped key
+ * (brand-new local nodes) keep their position by not being counted.
  */
 async function indexForSortOrder(
   ctx: EngineEnv,
   parentBrowserId: string,
   sortOrder: string,
+  uuid: string,
   excludeBrowserId: string | undefined,
 ): Promise<number> {
   let index = 0;
   for (const sibling of await ctx.bookmarks.getChildren(parentBrowserId)) {
     if (sibling.id === excludeBrowserId) continue;
     const mapping = await ctx.stores.mappings.get(sibling.id);
-    if (mapping && mapping.sortOrder < sortOrder) index += 1;
+    if (!mapping) continue;
+    if (
+      mapping.sortOrder < sortOrder ||
+      (mapping.sortOrder === sortOrder && mapping.uuid !== undefined && mapping.uuid < uuid)
+    ) {
+      index += 1;
+    }
   }
   return index;
 }

@@ -1,7 +1,8 @@
 import type { BookmarkNodeLite, ChangeInfo, MoveInfo, RemoveInfo } from '../chrome/bookmarksApi.js';
 import { BROWSER_ROOT_ID, isInitialized } from './context.js';
 import type { EngineEnv } from './context.js';
-import { keyBetween } from './order.js';
+import { MAX_KEY_LENGTH, keyBetween, spreadKeys } from './order.js';
+import type { Mapping } from './types.js';
 
 /**
  * Translates native bookmark events into queued sync ops. Two things never
@@ -140,8 +141,9 @@ export async function handleRemoved(
 /**
  * Fractional key for the node at its current position: between the nearest
  * mapped siblings. The local shadow can be momentarily inconsistent during
- * bursts, so an inverted interval falls back to appending — exact convergent
- * ordering is Phase 4's problem.
+ * bursts, so an inverted interval falls back to appending. When repeated
+ * insertion into the same gap has exhausted key precision, every mapped
+ * sibling gets a fresh evenly-spread key (as queued move ops) first.
  */
 async function sortOrderAt(
   ctx: EngineEnv,
@@ -154,6 +156,20 @@ async function sortOrderAt(
   if (pos === -1) pos = siblings.findIndex((s) => s.id === selfId);
   if (pos === -1) pos = siblings.length;
 
+  const key = await keyAt(ctx, siblings, pos, selfId);
+  if (key.length <= MAX_KEY_LENGTH) return key;
+
+  await rebalanceSiblings(ctx, parentId, selfId, siblings);
+  return keyAt(ctx, siblings, pos, selfId);
+}
+
+/** Key between the nearest mapped siblings around `pos` (fresh mapping reads). */
+async function keyAt(
+  ctx: EngineEnv,
+  siblings: BookmarkNodeLite[],
+  pos: number,
+  selfId: string,
+): Promise<string> {
   let before: string | null = null;
   for (let i = pos - 1; i >= 0; i -= 1) {
     const sibling = siblings[i];
@@ -182,5 +198,40 @@ async function sortOrderAt(
     } catch {
       return keyBetween(null, null);
     }
+  }
+}
+
+/**
+ * Precision-exhaustion rebalance: reassigns short evenly-spread keys to every
+ * mapped sibling (excluding the node being placed), in current native order.
+ * Each reassignment updates the local shadow and queues a same-parent move op,
+ * so other devices converge on the fresh keys too.
+ */
+async function rebalanceSiblings(
+  ctx: EngineEnv,
+  parentId: string,
+  selfId: string,
+  siblings: BookmarkNodeLite[],
+): Promise<void> {
+  const mapped: Array<{ id: string; mapping: Mapping }> = [];
+  for (const sibling of siblings) {
+    if (sibling.id === selfId) continue;
+    const mapping = await ctx.stores.mappings.get(sibling.id);
+    if (mapping) mapped.push({ id: sibling.id, mapping });
+  }
+  const keys = spreadKeys(mapped.length);
+  ctx.log(`rebalancing ${mapped.length} sort keys under parent ${parentId}`);
+  for (const [i, { id, mapping }] of mapped.entries()) {
+    const sortOrder = keys[i] as string;
+    if (mapping.sortOrder === sortOrder) continue;
+    await ctx.stores.mappings.put({ ...mapping, sortOrder });
+    await ctx.stores.queue.enqueue({
+      opId: ctx.newId(),
+      timestamp: ctx.now(),
+      kind: 'move',
+      browserId: id,
+      parentBrowserId: parentId,
+      sortOrder,
+    });
   }
 }

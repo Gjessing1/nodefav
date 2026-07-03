@@ -23,9 +23,19 @@ interface ServerNode {
 }
 
 /**
+ * LWW field groups, mirroring the backend: updates (title/url) compete with
+ * creates + updates, moves (parent/order) with creates + moves. An op loses
+ * only to a strictly newer already-applied op in its group.
+ */
+const LWW_GROUPS = {
+  update: ['create', 'update'],
+  move: ['create', 'move'],
+} as const;
+
+/**
  * In-memory stand-in for the backend sync API: op log with a monotonic seq,
- * opId dedup, server-assigned uuids, soft-delete cascade. Deliberately no LWW
- * staleness — client tests never race two writers on one field.
+ * opId dedup, server-assigned uuids, soft-delete cascade, and the backend's
+ * LWW staleness semantics — the two-profile matrix relies on parity here.
  */
 export class FakeSyncServer implements SyncApi {
   offline = false;
@@ -58,7 +68,9 @@ export class FakeSyncServer implements SyncApi {
     const build = (parentUuid: string | null): BookmarkNode[] =>
       live
         .filter((n) => n.parentUuid === parentUuid)
-        .sort((a, b) => (a.sortOrder < b.sortOrder ? -1 : 1))
+        .sort((a, b) =>
+          a.sortOrder < b.sortOrder ? -1 : a.sortOrder > b.sortOrder ? 1 : a.uuid < b.uuid ? -1 : 1,
+        )
         .map((n) => ({
           uuid: n.uuid,
           parentUuid: n.parentUuid,
@@ -109,6 +121,9 @@ export class FakeSyncServer implements SyncApi {
       case 'update': {
         const node = this.nodes.get(op.uuid);
         if (!node) return rejected(`unknown ${op.uuid}`);
+        if (this.isStale(op.uuid, 'update', op.timestamp)) {
+          return { opId: op.opId, status: 'stale', uuid: op.uuid };
+        }
         if (op.title !== undefined) node.title = op.title;
         if (op.url !== undefined && node.type === 'bookmark') node.url = op.url;
         node.updatedAt = op.timestamp;
@@ -119,6 +134,9 @@ export class FakeSyncServer implements SyncApi {
         if (!node) return rejected(`unknown ${op.uuid}`);
         if (op.parentUuid !== null && !this.liveFolder(op.parentUuid)) {
           return rejected(`bad parent ${op.parentUuid}`);
+        }
+        if (this.isStale(op.uuid, 'move', op.timestamp)) {
+          return { opId: op.opId, status: 'stale', uuid: op.uuid };
         }
         node.parentUuid = op.parentUuid;
         node.sortOrder = op.sortOrder;
@@ -152,6 +170,14 @@ export class FakeSyncServer implements SyncApi {
     const node = this.nodes.get(uuid);
     if (node) node.version = seq;
     return { opId: op.opId, status: 'applied', uuid, seq };
+  }
+
+  private isStale(uuid: string, group: keyof typeof LWW_GROUPS, timestamp: number): boolean {
+    const types: readonly string[] = LWW_GROUPS[group];
+    return this.log.some(
+      (logged) =>
+        logged.uuid === uuid && types.includes(logged.type) && logged.timestamp > timestamp,
+    );
   }
 
   private liveFolder(uuid: string): boolean {
