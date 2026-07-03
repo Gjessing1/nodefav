@@ -9,6 +9,7 @@ node_modules/
 # --- Build output ---
 dist/
 build/
+/nodefav-extension-*.zip
 
 # --- Env & secrets ---
 .env
