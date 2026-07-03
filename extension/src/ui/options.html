@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>nodefav options</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 34rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #1a1a1a;
+      }
+      h1 {
+        font-size: 1.3rem;
+      }
+      label {
+        display: block;
+        margin: 0.8rem 0 0.2rem;
+        font-weight: 600;
+      }
+      input {
+        width: 100%;
+        padding: 0.4rem;
+        box-sizing: border-box;
+        font: inherit;
+      }
+      .buttons {
+        margin: 1rem 0;
+        display: flex;
+        gap: 0.5rem;
+      }
+      button {
+        padding: 0.4rem 1rem;
+        font: inherit;
+      }
+      #message {
+        min-height: 1.2rem;
+        font-size: 0.9rem;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.2rem 1rem;
+        font-size: 0.9rem;
+      }
+      dt {
+        font-weight: 600;
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .error {
+        color: #b00020;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>nodefav</h1>
+    <label for="serverUrl">Server URL</label>
+    <input id="serverUrl" type="url" placeholder="https://nodefav.example.com" />
+    <label for="token">Token</label>
+    <input id="token" type="password" autocomplete="off" />
+    <div class="buttons">
+      <button id="save">Save</button>
+      <button id="syncNow">Sync now</button>
+    </div>
+    <p id="message"></p>
+    <h2>Status</h2>
+    <dl id="status"></dl>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

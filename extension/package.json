@@ -1,7 +1,19 @@
 {
   "name": "@nodefav/extension",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MV3 browser extension — scaffolded in Phase 2 of the roadmap."
+  "description": "MV3 browser extension — the invisible synchronization layer.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test 'src/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@nodefav/shared": "*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "esbuild": "^0.25.0"
+  }
 }
