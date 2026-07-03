@@ -2,7 +2,8 @@ import type { BookmarkNodeLite, ChangeInfo, MoveInfo, RemoveInfo } from '../chro
 import { handleChanged, handleCreated, handleMoved, handleRemoved } from './capture.js';
 import { META } from './context.js';
 import type { EngineEnv } from './context.js';
-import { ensureInitialized } from './initial.js';
+import { ensureInitialized, reconcileRoots } from './initial.js';
+import { pull } from './puller.js';
 import { flush } from './uploader.js';
 
 export interface SyncStatus {
@@ -17,6 +18,15 @@ export interface SyncStatus {
 
 const BACKOFF_BASE_MS = 30_000;
 const BACKOFF_MAX_MS = 15 * 60_000;
+
+/**
+ * How long an unconsumed expected-echo record may live. Echoes normally arrive
+ * within the same event-loop turn; even a service-worker death only delays one
+ * until the next worker starts. A record this old belongs to an event the
+ * browser will never deliver (e.g. a failed native mutation) and would only
+ * risk swallowing a genuine future edit.
+ */
+const ECHO_TTL_MS = 10 * 60_000;
 
 /**
  * The extension's sync brain. Every entry point runs on one FIFO mutex: event
@@ -54,7 +64,9 @@ export class SyncEngine {
   }
 
   /**
-   * One full cycle: initialize if needed, then upload the queue. Failures set
+   * One full cycle: initialize if needed, upload the queue, then pull and apply
+   * remote operations. Once caught up, root reconciliation may enqueue creates
+   * for cloud-unknown browser roots — flushed in the same cycle. Failures set
    * exponential backoff (respected by periodic alarms, overridden by `force`)
    * and are surfaced via status().
    */
@@ -68,6 +80,12 @@ export class SyncEngine {
       try {
         if (!(await ensureInitialized(this.ctx))) return;
         await flush(this.ctx);
+        if (await pull(this.ctx)) {
+          await reconcileRoots(this.ctx);
+          await flush(this.ctx);
+        }
+        const purged = await this.ctx.stores.echoes.purgeOlderThan(this.ctx.now() - ECHO_TTL_MS);
+        if (purged > 0) this.ctx.log(`purged ${purged} expired echo record(s)`);
         await meta.set(META.lastSyncAt, this.ctx.now());
         await meta.remove(META.lastError);
         await meta.remove(META.failureCount);
