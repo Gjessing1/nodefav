@@ -28,24 +28,35 @@ jobs:
   # build (backend/Dockerfile), so there is no separate `verify` job and dependencies
   # are installed exactly once per push. Caching is handled by the host BuildKit
   # daemon: the `npm ci` layer is reused whenever package-lock.json is unchanged.
-  build-and-push:
+  #
+  # The deploy runs in this job too, rather than in a separate `needs:` job: this
+  # instance has ONE runner with capacity 1 shared by every repo, so a second job has
+  # to queue for another turn on it, often behind atlas's 30-50 minute builds. If a new
+  # commit lands during that wait, Forgejo auto-cancels the previous run's still-queued
+  # job — the deploy is then silently skipped and a stale container keeps running while
+  # the run still shows green.
+  build-and-deploy:
     runs-on: docker
     permissions:
       contents: read
       packages: write # not sufficient alone on this instance; push uses REGISTRY_TOKEN (see auth step)
     env:
       DOCKER_BUILDKIT: '1' # required for the Dockerfile's RUN --mount=type=cache npm cache
+      # Deploy project (compose file + .env), bind-mounted into the job by the runner.
+      DEPLOY_DIR: /home/gjessing/docker/nodefav
     steps:
       - uses: actions/checkout@v4
 
       # Written directly instead of `docker login`: login pings the registry from the job
       # container (where localhost:3000 is unreachable), but the push runs on the host daemon
-      # (where it works).
+      # (where it works). Both hostnames are authed here — pushes go to localhost:3000,
+      # the deploy's compose pull to git.gjessing.io.
       - name: Registry auth
         run: |
           mkdir -p ~/.docker
           auth=$(printf 'gjessing1:%s' "${{ secrets.REGISTRY_TOKEN }}" | base64 -w0)
-          printf '{"auths":{"localhost:3000":{"auth":"%s"}}}' "$auth" > ~/.docker/config.json
+          printf '{"auths":{"localhost:3000":{"auth":"%s"},"git.gjessing.io":{"auth":"%s"}}}' \
+            "$auth" "$auth" > ~/.docker/config.json
 
       - name: Build image
         # --progress=plain so the verbose npm output is readable in the run log. The build
@@ -80,23 +91,27 @@ jobs:
             --upload-file "$FILE" \
             "https://git.gjessing.io/api/packages/gjessing1/generic/nodefav-extension/$VERSION-$SHA_TAG/$FILE"
 
-  # Redeploy on the host after a successful main build. Runs against the host daemon
-  # via the mounted Docker socket; the deploy project (compose file + .env) is
-  # bind-mounted into the job by the runner.
-  deploy:
-    needs: build-and-push
-    if: github.ref == 'refs/heads/main'
-    runs-on: docker
-    env:
-      DEPLOY_DIR: /home/gjessing/docker/nodefav
-    steps:
-      - name: Registry auth
-        run: |
-          mkdir -p ~/.docker
-          auth=$(printf 'gjessing1:%s' "${{ secrets.REGISTRY_TOKEN }}" | base64 -w0)
-          printf '{"auths":{"git.gjessing.io":{"auth":"%s"}}}' "$auth" > ~/.docker/config.json
+      # Redeploy on the host, against the host daemon via the mounted Docker socket.
+      # Pulls git.gjessing.io/...:latest — the image just pushed above. Guarded on main
+      # because this workflow also runs for v* tags and workflow_dispatch.
       - name: Pull and restart
+        if: github.ref == 'refs/heads/main'
         run: |
           cd "$DEPLOY_DIR"
           docker compose pull
           docker compose up -d --remove-orphans
+
+      # Fail loudly if the stack came back on the old image, so a lost deploy shows up
+      # as a red run instead of a green one with a stale container.
+      - name: Verify deploy
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cd "$DEPLOY_DIR"
+          built=$(docker image inspect --format '{{.Id}}' "$IMAGE:latest")
+          running=$(docker compose ps -q | xargs -r docker inspect --format '{{.Image}}')
+          if ! printf '%s\n' "$running" | grep -qFx "$built"; then
+            echo "no running container uses the image just built ($built)" >&2
+            docker compose ps >&2
+            exit 1
+          fi
+          echo "deployed $built"
