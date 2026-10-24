@@ -1,6 +1,6 @@
 import type { BookmarkNodeLite, ChangeInfo, MoveInfo, RemoveInfo } from '../chrome/bookmarksApi.js';
 import { handleChanged, handleCreated, handleMoved, handleRemoved } from './capture.js';
-import { META, excludeUnsyncableRoots } from './context.js';
+import { META, excludeUnsyncableRoots, getDeviceId } from './context.js';
 import type { EngineEnv } from './context.js';
 import { applyInitialChoice, ensureInitialized, reconcileRoots } from './initial.js';
 import type { InitialChoice } from './initial.js';
@@ -84,6 +84,11 @@ export class SyncEngine {
     return this.run(() =>
       this.cycle(options?.force === true, undefined, options?.reconcile === true),
     );
+  }
+
+  /** This install's stable id (created on first use), serialized with sync so it is minted once. */
+  deviceId(): Promise<string> {
+    return this.run(() => getDeviceId(this.ctx));
   }
 
   /**

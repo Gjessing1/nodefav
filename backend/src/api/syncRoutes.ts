@@ -2,8 +2,10 @@ import type { ServerResponse } from 'node:http';
 import { asc, gt } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type {
+  DeviceInfo,
   GetBookmarksResponse,
   GetChecksumResponse,
+  GetDevicesResponse,
   GetMetaResponse,
   GetOpsResponse,
   GetStatsResponse,
@@ -19,6 +21,7 @@ import { operations } from '../database/schema.js';
 import { applyOps, currentServerVersion } from '../sync/applyOps.js';
 import { computeChecksum } from '../sync/checksum.js';
 import type { VersionBus } from '../sync/events.js';
+import { listDevices, upsertDevice, validateDeviceReport } from '../sync/devices.js';
 import { listMeta } from '../jobs/enrichment.js';
 import { listTrash, restoreSubtree } from '../sync/restore.js';
 import { collectStats } from '../sync/stats.js';
@@ -112,6 +115,22 @@ export function syncRoutes(
 
   app.get('/stats', (): GetStatsResponse => {
     return collectStats(db, retentionDays, currentServerVersion(db), bus.size());
+  });
+
+  // Device registry: each browser reports its name + extension version, so the
+  // admin page can tell browsers apart and flag outdated installs.
+  app.put('/devices/:deviceId', (request, reply): DeviceInfo | undefined => {
+    const { deviceId } = request.params as { deviceId: string };
+    const report = validateDeviceReport(request.body);
+    if ('error' in report) {
+      void reply.code(400).send({ error: report.error });
+      return;
+    }
+    return upsertDevice(db, deviceId, report, Date.now());
+  });
+
+  app.get('/devices', (): GetDevicesResponse => {
+    return { devices: listDevices(db) };
   });
 
   app.get('/meta', (): GetMetaResponse => {

@@ -15,6 +15,13 @@
       "when": 1783092889033,
       "tag": "0001_bookmark_meta",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792870205576,
+      "tag": "0002_devices",
+      "breakpoints": true
     }
   ]
 }

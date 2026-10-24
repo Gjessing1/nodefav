@@ -75,6 +75,18 @@ export const bookmarkMeta = sqliteTable('bookmark_meta', {
   okAt: integer('ok_at'),
 });
 
+/**
+ * Browser installs as they last reported themselves (name + extension
+ * version). Informational only — nothing in sync reads it.
+ */
+export const devices = sqliteTable('devices', {
+  deviceId: text('device_id').primaryKey(),
+  name: text('name').notNull(),
+  version: text('version').notNull(),
+  /** Server wall-clock ms of the last report. */
+  lastSeenAt: integer('last_seen_at').notNull(),
+});
+
 export type BookmarkRow = typeof bookmarks.$inferSelect;
 export type OperationRow = typeof operations.$inferSelect;
 export type BookmarkMetaRow = typeof bookmarkMeta.$inferSelect;

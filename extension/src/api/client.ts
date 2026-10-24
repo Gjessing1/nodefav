@@ -1,8 +1,15 @@
 import type {
+  DeviceInfo,
   GetBookmarksResponse,
   GetChecksumResponse,
+  GetDevicesResponse,
+  GetMetaResponse,
   GetOpsResponse,
+  GetStatsResponse,
+  GetTrashResponse,
   PostOpsResponse,
+  PostRestoreResponse,
+  PutDeviceRequest,
   SyncOp,
 } from '@nodefav/shared';
 
@@ -54,6 +61,32 @@ export class ApiClient implements SyncApi {
 
   getChecksum(): Promise<GetChecksumResponse> {
     return this.request('GET', '/api/checksum');
+  }
+
+  // Admin page (manage.html) and device registry — not used by the sync engine.
+
+  getTrash(): Promise<GetTrashResponse> {
+    return this.request('GET', '/api/trash');
+  }
+
+  restore(uuid: string): Promise<PostRestoreResponse> {
+    return this.request('POST', '/api/restore', { uuid });
+  }
+
+  getMeta(): Promise<GetMetaResponse> {
+    return this.request('GET', '/api/meta');
+  }
+
+  getStats(): Promise<GetStatsResponse> {
+    return this.request('GET', '/api/stats');
+  }
+
+  getDevices(): Promise<GetDevicesResponse> {
+    return this.request('GET', '/api/devices');
+  }
+
+  putDevice(deviceId: string, report: PutDeviceRequest): Promise<DeviceInfo> {
+    return this.request('PUT', `/api/devices/${encodeURIComponent(deviceId)}`, report);
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {

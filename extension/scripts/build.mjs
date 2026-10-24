@@ -1,4 +1,4 @@
-// Bundles the service worker and options page into dist/, which is what gets
+// Bundles the service worker, options, popup and admin pages into dist/, which is what gets
 // loaded unpacked (chrome://extensions → "Load unpacked" → extension/dist).
 import { build } from 'esbuild';
 import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
@@ -8,6 +8,7 @@ await build({
     background: 'src/background/index.ts',
     options: 'src/ui/options.ts',
     popup: 'src/ui/popup.ts',
+    manage: 'src/ui/manage.ts',
   },
   bundle: true,
   format: 'esm',
@@ -21,6 +22,7 @@ mkdirSync('dist', { recursive: true });
 copyFileSync('src/manifest.json', 'dist/manifest.json');
 copyFileSync('src/ui/options.html', 'dist/options.html');
 copyFileSync('src/ui/popup.html', 'dist/popup.html');
+copyFileSync('src/ui/manage.html', 'dist/manage.html');
 mkdirSync('dist/icons', { recursive: true });
 for (const icon of readdirSync('src/icons')) {
   copyFileSync(`src/icons/${icon}`, `dist/icons/${icon}`);

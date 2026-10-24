@@ -192,3 +192,29 @@ export interface GetStatsResponse {
   enrichment: { checked: number; dead: number; pending: number };
   serverVersion: number;
 }
+
+/**
+ * A browser install as it last reported itself (`PUT /api/devices/:deviceId`).
+ * Purely informational — sync never depends on it — but it shows which
+ * browser is which and which ones still run an outdated extension.
+ */
+export interface DeviceInfo {
+  /** The same id the device stamps on its ops. */
+  deviceId: string;
+  /** User-chosen label, e.g. "Vivaldi – laptop". */
+  name: string;
+  /** Extension manifest version. */
+  version: string;
+  /** Server wall-clock ms of the last report. */
+  lastSeenAt: number;
+}
+
+export interface PutDeviceRequest {
+  name: string;
+  version: string;
+}
+
+export interface GetDevicesResponse {
+  /** Most recently seen first. */
+  devices: DeviceInfo[];
+}

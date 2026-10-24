@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>nodefav admin</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1a1a1a;
+        --muted: #666;
+        --line: #e3e3e3;
+        --panel: #f6f6f6;
+        --accent: #1a73e8;
+        --danger: #b00020;
+        --warn: #b45309;
+        --ok: #137333;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1c1c1e;
+          --fg: #ececec;
+          --muted: #a0a0a0;
+          --line: #3a3a3c;
+          --panel: #2a2a2c;
+          --accent: #8ab4f8;
+          --danger: #f28b82;
+          --warn: #fdd663;
+          --ok: #81c995;
+        }
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        max-width: 60rem;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 4rem;
+        font-size: 0.95rem;
+      }
+      h1 {
+        font-size: 1.3rem;
+        margin: 0;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.5rem 1rem;
+        margin-bottom: 0.8rem;
+      }
+      #summary {
+        color: var(--muted);
+        font-size: 0.85rem;
+        flex: 1;
+      }
+      nav {
+        display: flex;
+        gap: 0.3rem;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 1rem;
+      }
+      nav button {
+        border: none;
+        background: none;
+        color: var(--muted);
+        padding: 0.5rem 0.9rem;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        font: inherit;
+      }
+      nav button[aria-selected='true'] {
+        color: var(--fg);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+      }
+      .small {
+        font-size: 0.8rem;
+        padding: 0.1rem 0.45rem;
+      }
+      input,
+      select {
+        font: inherit;
+        padding: 0.3rem 0.4rem;
+        box-sizing: border-box;
+        max-width: 100%;
+      }
+      #search {
+        width: 100%;
+        margin-bottom: 0.8rem;
+      }
+      #message {
+        min-height: 1.2rem;
+        margin: 0 0 0.6rem;
+        font-size: 0.9rem;
+      }
+      .error {
+        color: var(--danger);
+      }
+      ul.tree,
+      ul.tree ul {
+        list-style: none;
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+      ul.tree {
+        padding-left: 0;
+      }
+      summary {
+        cursor: pointer;
+        list-style: none;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      .caret {
+        width: 0.8rem;
+        flex: none;
+        color: var(--muted);
+        font-size: 0.7rem;
+        transition: transform 0.1s;
+      }
+      li.leaf > .row {
+        padding-left: 1.4rem;
+      }
+      details[open] > summary .caret {
+        transform: rotate(90deg);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.15rem 0.2rem;
+        border-radius: 4px;
+        min-height: 1.8rem;
+      }
+      .row:hover {
+        background: var(--panel);
+      }
+      .row .title {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .url {
+        color: var(--muted);
+        font-size: 0.8rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
+      }
+      .row .spacer {
+        flex: 1;
+      }
+      .row .actions {
+        display: flex;
+        flex: none;
+        gap: 0.2rem;
+        opacity: 0.35;
+      }
+      .row .actions button {
+        white-space: nowrap;
+      }
+      .row:hover .actions,
+      .row:focus-within .actions {
+        opacity: 1;
+      }
+      .icon {
+        width: 16px;
+        height: 16px;
+        flex: none;
+        text-align: center;
+        font-size: 0.8rem;
+        line-height: 16px;
+      }
+      .badge {
+        font-size: 0.72rem;
+        padding: 0 0.4rem;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+        white-space: nowrap;
+        flex: none;
+      }
+      .badge.dead {
+        color: var(--danger);
+      }
+      .badge.failing,
+      .badge.old {
+        color: var(--warn);
+      }
+      .badge.muted {
+        color: var(--muted);
+      }
+      .badge.ok {
+        color: var(--ok);
+      }
+      a {
+        color: var(--accent);
+      }
+      form.editor {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.4rem 0.6rem;
+        align-items: center;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0.7rem;
+        margin: 0.3rem 0 0.5rem;
+      }
+      form.editor .buttons {
+        grid-column: 2;
+        display: flex;
+        gap: 0.4rem;
+      }
+      form.editor input,
+      form.editor select {
+        width: 100%;
+      }
+      .path {
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.4rem 0.5rem;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-size: 0.8rem;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .empty {
+        color: var(--muted);
+        padding: 1rem 0;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      /* Phone width: actions wrap under the title instead of squeezing it. */
+      @media (max-width: 640px) {
+        .row {
+          flex-wrap: wrap;
+        }
+        .row .url,
+        .row .spacer {
+          display: none;
+        }
+        .row .actions {
+          opacity: 1;
+          flex-wrap: wrap;
+          width: 100%;
+          padding-left: 1.6rem;
+        }
+        #summary {
+          flex-basis: 100%;
+          order: 3;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>nodefav admin</h1>
+      <span id="summary"></span>
+      <button id="refresh">Refresh</button>
+    </header>
+    <nav role="tablist">
+      <button role="tab" data-tab="bookmarks" aria-selected="true">Bookmarks</button>
+      <button role="tab" data-tab="trash" aria-selected="false">Trash</button>
+      <button role="tab" data-tab="devices" aria-selected="false">Devices</button>
+    </nav>
+    <p id="message"></p>
+
+    <section id="tab-bookmarks">
+      <input id="search" type="search" placeholder="Search titles and URLs…" />
+      <div id="tree"></div>
+      <p class="hint">
+        Changes here go to the cloud and reach every browser within seconds, just like edits made in
+        a browser. Deleted items go to the trash.
+      </p>
+    </section>
+
+    <section id="tab-trash" hidden>
+      <div id="trash"></div>
+    </section>
+
+    <section id="tab-devices" hidden>
+      <div id="devices"></div>
+      <p class="hint">
+        Each browser reports its name and extension version. Rename a browser in its own nodefav
+        options page.
+      </p>
+    </section>
+
+    <script type="module" src="manage.js"></script>
+  </body>
+</html>

@@ -71,7 +71,14 @@
     </style>
   </head>
   <body>
-    <h1>nodefav</h1>
+    <h1>nodefav <span id="version" class="hint"></span></h1>
+    <p><a href="manage.html" target="_blank">Open bookmark admin →</a></p>
+    <label for="deviceName">Device name</label>
+    <input id="deviceName" type="text" maxlength="100" placeholder="e.g. Vivaldi – laptop" />
+    <p class="hint">
+      Shown in the admin page's device list so you can tell your browsers apart.
+      <span id="deviceId"></span>
+    </p>
     <label for="serverUrl">Server URL</label>
     <input id="serverUrl" type="url" placeholder="https://nodefav.example.com" />
     <label for="token">Token</label>

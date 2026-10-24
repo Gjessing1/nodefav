@@ -8,6 +8,7 @@ type UiStatus = SyncStatus & { realtime?: RealtimeState };
 const serverUrlInput = document.getElementById('serverUrl') as HTMLInputElement;
 const tokenInput = document.getElementById('token') as HTMLInputElement;
 const syncIntervalInput = document.getElementById('syncInterval') as HTMLInputElement;
+const deviceNameInput = document.getElementById('deviceName') as HTMLInputElement;
 const message = document.getElementById('message') as HTMLParagraphElement;
 const statusList = document.getElementById('status') as HTMLDListElement;
 const chooser = document.getElementById('chooser') as HTMLElement;
@@ -20,6 +21,18 @@ async function loadConfig(): Promise<void> {
   serverUrlInput.value = serverUrl ?? '';
   tokenInput.value = token ?? '';
   syncIntervalInput.value = String(await getSyncInterval());
+  const device = (await chrome.runtime.sendMessage({ type: 'nodefav:device' })) as
+    { deviceId: string; name: string; version: string } | { error: string };
+  if (!('error' in device)) {
+    deviceNameInput.value = device.name;
+    setText('version', `v${device.version}`);
+    setText('deviceId', `Device ID: ${device.deviceId}`);
+  }
+}
+
+function setText(id: string, text: string): void {
+  const element = document.getElementById(id);
+  if (element) element.textContent = text;
 }
 
 async function save(): Promise<void> {
@@ -27,7 +40,13 @@ async function save(): Promise<void> {
   const token = tokenInput.value.trim();
   const syncIntervalMinutes = normalizeSyncInterval(syncIntervalInput.value);
   syncIntervalInput.value = String(syncIntervalMinutes);
-  await chrome.storage.local.set({ serverUrl, token, syncIntervalMinutes });
+  const deviceName = deviceNameInput.value.trim().slice(0, 100);
+  await chrome.storage.local.set({
+    serverUrl,
+    token,
+    syncIntervalMinutes,
+    ...(deviceName ? { deviceName } : {}),
+  });
   message.textContent = 'Saved.';
   message.className = '';
   await syncNow('nodefav:syncNow');

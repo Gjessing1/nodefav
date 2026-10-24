@@ -59,6 +59,9 @@ document.getElementById('syncNow')?.addEventListener('click', () => {
   message.className = '';
   void refresh('nodefav:syncNow');
 });
+document.getElementById('openManage')?.addEventListener('click', () => {
+  void chrome.tabs.create({ url: chrome.runtime.getURL('manage.html') });
+});
 document.getElementById('openOptions')?.addEventListener('click', () => {
   void chrome.runtime.openOptionsPage();
 });

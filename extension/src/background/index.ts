@@ -3,17 +3,24 @@ import { chromeBookmarksApi } from '../chrome/bookmarksApi.js';
 import { idbStores } from '../storage/idb.js';
 import { SyncEngine } from '../sync/engine.js';
 import { RealtimeClient } from '../sync/realtime.js';
+import { extensionVersion, getDeviceName, reportDue } from '../ui/device.js';
+import type { DeviceReport } from '../ui/device.js';
 import { getSyncInterval } from '../ui/settings.js';
+
+async function getConfig(): Promise<{ serverUrl: string; token: string } | null> {
+  const { serverUrl, token } = (await chrome.storage.local.get(['serverUrl', 'token'])) as {
+    serverUrl?: string;
+    token?: string;
+  };
+  return serverUrl && token ? { serverUrl, token } : null;
+}
 
 const engine = new SyncEngine({
   bookmarks: chromeBookmarksApi(),
   stores: idbStores(),
   getApi: async () => {
-    const { serverUrl, token } = (await chrome.storage.local.get(['serverUrl', 'token'])) as {
-      serverUrl?: string;
-      token?: string;
-    };
-    return serverUrl && token ? new ApiClient({ serverUrl, token }) : null;
+    const config = await getConfig();
+    return config ? new ApiClient(config) : null;
   },
   now: () => Date.now(),
   newId: () => crypto.randomUUID(),
@@ -27,13 +34,7 @@ const engine = new SyncEngine({
  * whenever the stream (or the service worker) is down.
  */
 const realtime = new RealtimeClient({
-  getConfig: async () => {
-    const { serverUrl, token } = (await chrome.storage.local.get(['serverUrl', 'token'])) as {
-      serverUrl?: string;
-      token?: string;
-    };
-    return serverUrl && token ? { serverUrl, token } : null;
-  },
+  getConfig,
   onVersion: (serverVersion) => {
     engine
       .status()
@@ -69,11 +70,38 @@ async function refreshBadge(): Promise<void> {
   await chrome.action.setBadgeText({ text });
 }
 
+/**
+ * Tells the backend's device registry this install's name and extension
+ * version — on change, and every few hours as a "last seen". Best-effort:
+ * sync never depends on it.
+ */
+async function reportDevice(): Promise<void> {
+  const config = await getConfig();
+  if (!config) return;
+  const { lastDeviceReport } = (await chrome.storage.local.get('lastDeviceReport')) as {
+    lastDeviceReport?: DeviceReport;
+  };
+  const current: DeviceReport = {
+    serverUrl: config.serverUrl,
+    name: await getDeviceName(),
+    version: extensionVersion(),
+    at: Date.now(),
+  };
+  if (!reportDue(lastDeviceReport, current)) return;
+  await new ApiClient(config).putDevice(await engine.deviceId(), {
+    name: current.name,
+    version: current.version,
+  });
+  await chrome.storage.local.set({ lastDeviceReport: current });
+}
+
 function syncAndBadge(options?: { force?: boolean; reconcile?: boolean }): Promise<void> {
   return engine
     .sync(options)
     .then(refreshBadge)
-    .catch((error: unknown) => console.warn('[nodefav] badge refresh failed', error));
+    .catch((error: unknown) => console.warn('[nodefav] badge refresh failed', error))
+    .then(reportDevice)
+    .catch((error: unknown) => console.warn('[nodefav] device report failed', error));
 }
 
 /**
@@ -126,13 +154,19 @@ chrome.storage.onChanged.addListener((changes, area) => {
     syncSoon();
     realtime.restart();
   }
+  if ('deviceName' in changes) {
+    void reportDevice().catch((error: unknown) =>
+      console.warn('[nodefav] device report failed', error),
+    );
+  }
 });
 
 // Every service-worker start (not just install/startup — also event wake-ups)
 // runs this top level, so the stream comes back as soon as the worker does.
 realtime.ensureConnected();
 
-// Options/popup RPC: status snapshot, manual sync, drift check, first-sync merge choice.
+// Options/popup/admin RPC: status snapshot, device identity, manual sync, drift check,
+// first-sync merge choice.
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   const { type, choice } = (message ?? {}) as { type?: string; choice?: string };
   const respondWithStatus = (work: Promise<unknown>): void => {
@@ -146,6 +180,13 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   };
   if (type === 'nodefav:status') {
     respondWithStatus(Promise.resolve());
+    return true;
+  }
+  if (type === 'nodefav:device') {
+    Promise.all([engine.deviceId(), getDeviceName()]).then(
+      ([deviceId, name]) => sendResponse({ deviceId, name, version: extensionVersion() }),
+      (error) => sendResponse({ error: String(error) }),
+    );
     return true;
   }
   if (type === 'nodefav:syncNow') {
