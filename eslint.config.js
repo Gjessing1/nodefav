@@ -12,7 +12,15 @@ export default tseslint.config(
     // Plain Node scripts (build tooling) run outside TS; give them Node globals.
     files: ['**/*.{mjs,cjs}', '**/scripts/**'],
     languageOptions: {
-      globals: { Buffer: 'readonly', console: 'readonly', process: 'readonly' },
+      globals: {
+        Buffer: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        process: 'readonly',
+        Response: 'readonly',
+        setTimeout: 'readonly',
+        URLSearchParams: 'readonly',
+      },
     },
   },
   {

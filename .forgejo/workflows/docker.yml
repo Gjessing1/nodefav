@@ -90,6 +90,8 @@ jobs:
           curl --fail-with-body -sS -u "gjessing1:${{ secrets.REGISTRY_TOKEN }}" \
             --upload-file "$FILE" \
             "https://git.gjessing.io/api/packages/gjessing1/generic/nodefav-extension/$VERSION-$SHA_TAG/$FILE"
+          echo "EXTENSION_ZIP=$FILE" >> "$GITHUB_ENV"
+          echo "EXTENSION_VERSION=$VERSION" >> "$GITHUB_ENV"
 
       # Redeploy on the host, against the host daemon via the mounted Docker socket.
       # Pulls git.gjessing.io/...:latest — the image just pushed above. Guarded on main
@@ -115,3 +117,15 @@ jobs:
             exit 1
           fi
           echo "deployed $built"
+
+      # Submit the same zip to the Chrome Web Store when its manifest version is newer
+      # than what the store publishes or is reviewing (an older pending review is
+      # replaced); otherwise a no-op. Runs last so a store problem never blocks the
+      # deploy. Skips quietly until the CWS_* secrets exist (see README).
+      - name: Publish to Chrome Web Store
+        if: github.ref == 'refs/heads/main'
+        env:
+          CWS_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: node extension/scripts/publish-webstore.mjs "$EXTENSION_ZIP" "$EXTENSION_VERSION"
