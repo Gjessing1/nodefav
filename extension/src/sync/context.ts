@@ -60,8 +60,13 @@ export function syncableRoots(tree: BookmarkNodeLite[]): BookmarkNodeLite[] {
 
 /** Apply the same root policy to cloud roots before replaying them locally. */
 export function syncableRootTitle(tree: BookmarkNodeLite[], title: string): boolean {
-  const titles = new Set((tree[0]?.children ?? []).map((root) => root.title.trim().toLowerCase()));
-  const vivaldiLayout = titles.has('trash') && !titles.has('speed dial');
+  const roots = tree[0]?.children ?? [];
+  const titles = new Set(roots.map((root) => root.title.trim().toLowerCase()));
+  const other = roots.find((root) => root.title.trim().toLowerCase() === 'other bookmarks');
+  const copies = new Set((other?.children ?? []).map((child) => child.title.trim().toLowerCase()));
+  const importedEdgeRoots =
+    copies.has('workspaces') && (copies.has('other favourites') || copies.has('other favorites'));
+  const vivaldiLayout = (titles.has('trash') && !titles.has('speed dial')) || importedEdgeRoots;
   const edgeLayout = titles.has('other favourites') || titles.has('other favorites');
   const normalized = title.trim().toLowerCase();
   if (

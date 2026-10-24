@@ -184,3 +184,16 @@ test('moving a folder across an excluded root removes and restores its sync', as
     ['Daily'],
   );
 });
+
+test('Vivaldi hidden copies identify the excluded root when Trash is not exposed', async () => {
+  const fake = new FakeBookmarks(['Bookmarks bar', 'Other bookmarks']);
+  await fake.create({ parentId: '1', title: 'Enora' });
+  await fake.create({ parentId: '2', title: 'Workspaces' });
+  await fake.create({ parentId: '2', title: 'Other favourites' });
+  const h = createHarness({ fake });
+  await h.engine.sync();
+  assert.deepEqual(
+    (await h.server.getBookmarks()).roots.map((root) => root.title),
+    ['Bookmarks bar'],
+  );
+});
