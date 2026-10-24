@@ -1,5 +1,6 @@
 import type { OpResult, SyncOp } from '@nodefav/shared';
-import { BROWSER_ROOT_ID, getDeviceId, isInitialized } from './context.js';
+import type { BookmarkNodeLite } from '../chrome/bookmarksApi.js';
+import { BROWSER_ROOT_ID, getDeviceId, isInitialized, syncableRoots } from './context.js';
 import type { EngineEnv } from './context.js';
 import type { QueuedOp } from './types.js';
 
@@ -53,9 +54,25 @@ async function resolveBatch(
   const batch: BatchEntry[] = [];
   const droppedQids: number[] = [];
   const pendingCreates = new Set<string>();
+  const tree = await ctx.bookmarks.getTree();
+  const nativeIds = new Set<string>();
+  const syncableIds = new Set<string>();
+  const collect = (node: BookmarkNodeLite, ids: Set<string>): void => {
+    ids.add(node.id);
+    for (const child of node.children ?? []) collect(child, ids);
+  };
+  for (const root of tree) collect(root, nativeIds);
+  for (const root of syncableRoots(tree)) collect(root, syncableIds);
 
   for (const item of items) {
-    const resolution = await resolveItem(ctx, deviceId, item, pendingCreates);
+    const resolution = await resolveItem(
+      ctx,
+      deviceId,
+      item,
+      pendingCreates,
+      nativeIds,
+      syncableIds,
+    );
     if (resolution === 'defer') break;
     if (resolution === 'drop') {
       ctx.log(`dropping unresolvable ${item.kind} op for browser id ${item.browserId}`);
@@ -73,8 +90,12 @@ async function resolveItem(
   deviceId: string,
   item: QueuedOp,
   pendingCreates: Set<string>,
+  nativeIds: Set<string>,
+  syncableIds: Set<string>,
 ): Promise<Resolution> {
   const base = { opId: item.opId, deviceId, timestamp: item.timestamp };
+  if (item.kind !== 'delete' && nativeIds.has(item.browserId) && !syncableIds.has(item.browserId))
+    return 'drop';
 
   switch (item.kind) {
     case 'create': {

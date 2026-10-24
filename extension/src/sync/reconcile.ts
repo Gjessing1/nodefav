@@ -1,7 +1,7 @@
 import { checksumEntriesFromTree, treeChecksum } from '@nodefav/shared';
 import type { BookmarkNode, ChecksumEntry, RemoteOp } from '@nodefav/shared';
 import type { BookmarkNodeLite } from '../chrome/bookmarksApi.js';
-import { META, isInitialized, syncableRoots } from './context.js';
+import { META, isInitialized, syncableRootTitle, syncableRoots } from './context.js';
 import type { EngineEnv } from './context.js';
 import { enqueueSubtree } from './initial.js';
 import { keyBetween } from './order.js';
@@ -38,15 +38,19 @@ export async function reconcile(ctx: EngineEnv): Promise<ReconcileOutcome> {
   const queued = await enqueueUnsynced(ctx);
   if (queued > 0) return { status: 'uploads-queued', queued };
 
-  if (treeChecksum(await localEntries(ctx, new Set(remote.rootUuids))) === remote.checksum) {
+  const tree = await ctx.bookmarks.getTree();
+  const { roots: allRoots } = await api.getBookmarks();
+  const roots = allRoots.filter((root) => syncableRootTitle(tree, root.title));
+  const rootUuids = new Set(roots.map((root) => root.uuid));
+  const expected = treeChecksum(checksumEntriesFromTree(roots));
+  if (treeChecksum(await localEntries(ctx, rootUuids)) === expected) {
     return { status: 'clean' };
   }
 
-  const { roots } = await api.getBookmarks();
   const repaired = await repair(ctx, roots);
 
-  const localAfter = await localEntries(ctx, new Set(roots.map((root) => root.uuid)));
-  const residualDrift = treeChecksum(localAfter) !== treeChecksum(checksumEntriesFromTree(roots));
+  const localAfter = await localEntries(ctx, rootUuids);
+  const residualDrift = treeChecksum(localAfter) !== expected;
   return { status: 'repaired', repaired, residualDrift };
 }
 

@@ -1,6 +1,12 @@
 import type { RemoteOp } from '@nodefav/shared';
 import type { BookmarkNodeLite } from '../chrome/bookmarksApi.js';
-import { BROWSER_ROOT_ID, META, isInitialized, syncableRoots } from './context.js';
+import {
+  BROWSER_ROOT_ID,
+  META,
+  isInitialized,
+  syncableRootTitle,
+  syncableRoots,
+} from './context.js';
 import type { EngineEnv } from './context.js';
 
 const PULL_LIMIT = 500;
@@ -21,12 +27,31 @@ export async function pull(ctx: EngineEnv): Promise<boolean> {
   if (!(await isInitialized(ctx))) return false;
   const api = await ctx.getApi();
   if (!api) return false;
+  const tree = await ctx.bookmarks.getTree();
+  const { roots } = await api.getBookmarks();
+  const excludedUuids = new Set<string>();
+  const exclude = (node: (typeof roots)[number]): void => {
+    excludedUuids.add(node.uuid);
+    for (const child of node.children ?? []) exclude(child);
+  };
+  for (const root of roots) {
+    if (!syncableRootTitle(tree, root.title)) exclude(root);
+  }
 
   for (;;) {
     const cursor = (await ctx.stores.meta.get<number>(META.cursor)) ?? 0;
     const { ops } = await api.getOps(cursor, PULL_LIMIT);
     for (const op of ops) {
-      await applyRemoteOp(ctx, op);
+      if (
+        !excludedUuids.has(op.uuid) &&
+        !(
+          (op.type === 'create' || op.type === 'move') &&
+          op.parentUuid &&
+          excludedUuids.has(op.parentUuid)
+        )
+      ) {
+        await applyRemoteOp(ctx, op);
+      }
       await ctx.stores.meta.set(META.cursor, op.seq);
     }
     if (ops.length < PULL_LIMIT) return true;
@@ -48,6 +73,9 @@ export async function applyRemoteOp(ctx: EngineEnv, op: RemoteOp): Promise<void>
 }
 
 async function applyCreate(ctx: EngineEnv, op: RemoteOp & { type: 'create' }): Promise<void> {
+  if (op.parentUuid === null && !syncableRootTitle(await ctx.bookmarks.getTree(), op.title)) {
+    return;
+  }
   if (await ctx.stores.mappings.getByUuid(op.uuid)) return; // already applied
 
   let parentBrowserId: string;
@@ -196,8 +224,8 @@ async function applyDelete(ctx: EngineEnv, op: RemoteOp & { type: 'delete' }): P
 /**
  * A cloud root folder (parentUuid null) pairs with a permanent browser root
  * rather than creating anything: match unmapped roots by normalized title,
- * falling back to the first unmapped root (replay order equals original root
- * order, so ordinal pairing is right when titles differ across browsers).
+ * falling back only for the first root (localized bar titles differ). Further
+ * unmatched cloud roots become ordinary folders under the visible first root.
  */
 async function adoptCloudRoot(ctx: EngineEnv, op: RemoteOp & { type: 'create' }): Promise<boolean> {
   const roots = syncableRoots(await ctx.bookmarks.getTree());
@@ -207,7 +235,8 @@ async function adoptCloudRoot(ctx: EngineEnv, op: RemoteOp & { type: 'create' })
   }
   const normalize = (title: string): string => title.trim().toLowerCase();
   const match =
-    unmapped.find((root) => normalize(root.title) === normalize(op.title)) ?? unmapped[0];
+    unmapped.find((root) => normalize(root.title) === normalize(op.title)) ??
+    (unmapped.length === roots.length ? roots[0] : undefined);
   if (!match) return false;
   await ctx.stores.mappings.put({
     browserId: match.id,
@@ -218,10 +247,10 @@ async function adoptCloudRoot(ctx: EngineEnv, op: RemoteOp & { type: 'create' })
   return true;
 }
 
-/** Where surplus root-level cloud nodes land: the "other bookmarks"-ish root. */
+/** Surplus cloud roots must remain visible rather than landing in a hidden root. */
 async function fallbackRootId(ctx: EngineEnv): Promise<string> {
   const roots = syncableRoots(await ctx.bookmarks.getTree());
-  const root = roots[1] ?? roots[0];
+  const root = roots[0];
   if (!root) throw new Error('browser has no syncable bookmark roots');
   return root.id;
 }

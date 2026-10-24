@@ -1,6 +1,6 @@
 import type { BookmarkNodeLite, ChangeInfo, MoveInfo, RemoveInfo } from '../chrome/bookmarksApi.js';
 import { handleChanged, handleCreated, handleMoved, handleRemoved } from './capture.js';
-import { META } from './context.js';
+import { META, excludeUnsyncableRoots } from './context.js';
 import type { EngineEnv } from './context.js';
 import { applyInitialChoice, ensureInitialized, reconcileRoots } from './initial.js';
 import type { InitialChoice } from './initial.js';
@@ -105,6 +105,7 @@ export class SyncEngine {
       if (this.ctx.now() < nextAttemptAt) return;
     }
     try {
+      await excludeUnsyncableRoots(this.ctx);
       if (choice !== undefined) await applyInitialChoice(this.ctx, choice);
       if (!(await ensureInitialized(this.ctx))) return;
       await flush(this.ctx);

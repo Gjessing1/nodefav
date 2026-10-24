@@ -32,6 +32,7 @@ export const META = {
   lastReconcileAt: 'lastReconcileAt',
   /** Human-readable summary of the last drift found; absent while clean. */
   lastDrift: 'lastDrift',
+  excludedRootIds: 'excludedRootIds',
 } as const;
 
 export async function getDeviceId(ctx: EngineEnv): Promise<string> {
@@ -46,7 +47,60 @@ export async function isInitialized(ctx: EngineEnv): Promise<boolean> {
   return (await ctx.stores.meta.get<boolean>(META.initialized)) === true;
 }
 
-/** The browser's permanent root folders that participate in sync (managed roots don't). */
+/**
+ * Browser-owned roots are not all user bookmark collections. Edge Workspaces
+ * and browser trash are internal stores. Vivaldi exposes Chromium's "Other
+ * bookmarks" root to extensions although its bookmark UI does not show it;
+ * its Trash root distinguishes that profile from the ordinary Chromium tree.
+ */
 export function syncableRoots(tree: BookmarkNodeLite[]): BookmarkNodeLite[] {
-  return (tree[0]?.children ?? []).filter((root) => !root.unmodifiable);
+  const roots = tree[0]?.children ?? [];
+  return roots.filter((root) => !root.unmodifiable && syncableRootTitle(tree, root.title));
+}
+
+/** Apply the same root policy to cloud roots before replaying them locally. */
+export function syncableRootTitle(tree: BookmarkNodeLite[], title: string): boolean {
+  const titles = new Set((tree[0]?.children ?? []).map((root) => root.title.trim().toLowerCase()));
+  const vivaldiLayout = titles.has('trash') && !titles.has('speed dial');
+  const edgeLayout = titles.has('other favourites') || titles.has('other favorites');
+  const normalized = title.trim().toLowerCase();
+  if (
+    normalized === 'workspaces' ||
+    normalized === 'trash' ||
+    normalized === 'deleted' ||
+    normalized === 'other favourites' ||
+    normalized === 'other favorites'
+  )
+    return false;
+  if ((vivaldiLayout || edgeLayout) && normalized === 'other bookmarks') return false;
+  return true;
+}
+
+/** Whether a native node lives below a root that participates in sync. */
+export async function isSyncableLocation(ctx: EngineEnv, browserId: string): Promise<boolean> {
+  const roots = syncableRoots(await ctx.bookmarks.getTree());
+  const allowed = new Set(roots.map((root) => root.id));
+  let id = browserId;
+  while (id !== BROWSER_ROOT_ID) {
+    if (allowed.has(id)) return true;
+    const node = await ctx.bookmarks.get(id);
+    if (!node?.parentId) return false;
+    id = node.parentId;
+  }
+  return false;
+}
+
+/** Remove stale local state for roots that an older version synchronized. */
+export async function excludeUnsyncableRoots(ctx: EngineEnv): Promise<void> {
+  const tree = await ctx.bookmarks.getTree();
+  const allowed = new Set(syncableRoots(tree).map((root) => root.id));
+  const excluded = (tree[0]?.children ?? []).filter((root) => !allowed.has(root.id));
+  const migrated = new Set((await ctx.stores.meta.get<string[]>(META.excludedRootIds)) ?? []);
+  for (const root of excluded) {
+    if (migrated.has(root.id)) continue;
+    await ctx.stores.mappings.removeSubtree(root.id);
+    migrated.add(root.id);
+  }
+  await ctx.stores.meta.set(META.excludedRootIds, [...migrated]);
+  // The uploader discards queued edits whose native location is excluded.
 }

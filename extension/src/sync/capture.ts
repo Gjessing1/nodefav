@@ -1,5 +1,6 @@
 import type { BookmarkNodeLite, ChangeInfo, MoveInfo, RemoveInfo } from '../chrome/bookmarksApi.js';
-import { BROWSER_ROOT_ID, isInitialized } from './context.js';
+import { BROWSER_ROOT_ID, isInitialized, isSyncableLocation } from './context.js';
+import { enqueueSubtree } from './initial.js';
 import type { EngineEnv } from './context.js';
 import { MAX_KEY_LENGTH, keyBetween, spreadKeys } from './order.js';
 import type { Mapping } from './types.js';
@@ -37,6 +38,7 @@ export async function handleCreated(
 
   const parentId = node.parentId;
   if (!parentId || node.unmodifiable) return;
+  if (!(await isSyncableLocation(ctx, parentId))) return;
   if (parentId !== BROWSER_ROOT_ID && !(await ctx.stores.mappings.get(parentId))) return;
 
   const sortOrder = await sortOrderAt(ctx, parentId, id, node.index);
@@ -69,7 +71,7 @@ export async function handleChanged(
   });
   if (echo) return;
 
-  if (!(await ctx.stores.mappings.get(id))) return;
+  if (!(await ctx.stores.mappings.get(id)) || !(await isSyncableLocation(ctx, id))) return;
   await ctx.stores.queue.enqueue({
     opId: ctx.newId(),
     timestamp: ctx.now(),
@@ -101,7 +103,35 @@ export async function handleMoved(ctx: EngineEnv, id: string, moveInfo: MoveInfo
     return;
   }
 
-  if (!mapping) return;
+  const destinationSyncable = await isSyncableLocation(ctx, moveInfo.parentId);
+  if (!destinationSyncable) {
+    if (mapping?.uuid) {
+      await ctx.stores.queue.enqueue({
+        opId: ctx.newId(),
+        timestamp: ctx.now(),
+        kind: 'delete',
+        browserId: id,
+      });
+    }
+    return;
+  }
+  if (!mapping) {
+    const tree = await ctx.bookmarks.getTree();
+    const find = (nodes: BookmarkNodeLite[]): BookmarkNodeLite | undefined => {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        const child = find(node.children ?? []);
+        if (child) return child;
+      }
+      return undefined;
+    };
+    const node = find(tree);
+    if (node) {
+      const sortOrder = await sortOrderAt(ctx, moveInfo.parentId, id, moveInfo.index);
+      await enqueueSubtree(ctx, node, moveInfo.parentId, sortOrder);
+    }
+    return;
+  }
   const sortOrder = await sortOrderAt(ctx, moveInfo.parentId, id, moveInfo.index);
   await ctx.stores.mappings.put({ ...mapping, parentBrowserId: moveInfo.parentId, sortOrder });
   await ctx.stores.queue.enqueue({
@@ -117,7 +147,7 @@ export async function handleMoved(ctx: EngineEnv, id: string, moveInfo: MoveInfo
 export async function handleRemoved(
   ctx: EngineEnv,
   id: string,
-  _removeInfo: RemoveInfo,
+  removeInfo: RemoveInfo,
 ): Promise<void> {
   if (!(await isInitialized(ctx))) return;
 
@@ -128,6 +158,7 @@ export async function handleRemoved(
   }
 
   if (!(await ctx.stores.mappings.get(id))) return;
+  if (!(await isSyncableLocation(ctx, removeInfo.parentId))) return;
   // Mapping removal is deferred to the uploader: earlier queued ops touching
   // descendants still need the mappings to resolve their uuids.
   await ctx.stores.queue.enqueue({

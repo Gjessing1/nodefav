@@ -1,6 +1,13 @@
 import type { BookmarkNode, SyncOp } from '@nodefav/shared';
 import type { BookmarkNodeLite } from '../chrome/bookmarksApi.js';
-import { BROWSER_ROOT_ID, META, getDeviceId, isInitialized, syncableRoots } from './context.js';
+import {
+  BROWSER_ROOT_ID,
+  META,
+  getDeviceId,
+  isInitialized,
+  syncableRootTitle,
+  syncableRoots,
+} from './context.js';
 import type { EngineEnv } from './context.js';
 import { keyBetween } from './order.js';
 
@@ -61,8 +68,12 @@ export async function applyInitialChoice(ctx: EngineEnv, choice: InitialChoice):
   if (!api) throw new Error('extension is not configured');
 
   const cloud = await api.getBookmarks();
-  const roots = syncableRoots(await ctx.bookmarks.getTree());
-  const { pairs, unpairedCloud } = pairRoots(roots, cloud.roots);
+  const tree = await ctx.bookmarks.getTree();
+  const roots = syncableRoots(tree);
+  const { pairs, unpairedCloud } = pairRoots(
+    roots,
+    cloud.roots.filter((root) => syncableRootTitle(tree, root.title)),
+  );
 
   switch (choice) {
     case 'keep-local': {
@@ -137,8 +148,8 @@ async function mapNode(
 
 /**
  * Pairs syncable browser roots with root-level cloud folders: normalized-title
- * matches first, then ordinal over the leftovers (mirrors adoptCloudRoot in
- * the puller).
+ * matches first, then a single positional match for the first root's localized
+ * title (mirrors adoptCloudRoot in the puller).
  */
 function pairRoots(
   roots: BookmarkNodeLite[],
@@ -150,22 +161,22 @@ function pairRoots(
   const remainingCloud = cloudRoots.filter((node) => node.type === 'folder');
   const nonFolders = cloudRoots.filter((node) => node.type !== 'folder');
   const pairs: Array<{ root: BookmarkNodeLite; cloud: BookmarkNode }> = [];
-  const ordinalRoots: BookmarkNodeLite[] = [];
+  let firstUnmatched: BookmarkNodeLite | undefined;
 
   for (const root of roots) {
     const index = remainingCloud.findIndex(
       (cloud) => normalize(cloud.title) === normalize(root.title),
     );
     if (index === -1) {
-      ordinalRoots.push(root);
+      if (root === roots[0]) firstUnmatched = root;
     } else {
       pairs.push({ root, cloud: remainingCloud[index] as BookmarkNode });
       remainingCloud.splice(index, 1);
     }
   }
-  for (const root of ordinalRoots) {
+  if (firstUnmatched) {
     const cloud = remainingCloud.shift();
-    if (cloud) pairs.push({ root, cloud });
+    if (cloud) pairs.push({ root: firstUnmatched, cloud });
   }
   return { pairs, unpairedCloud: [...remainingCloud, ...nonFolders] };
 }
