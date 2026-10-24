@@ -157,14 +157,26 @@ async function applyUpdate(ctx: EngineEnv, op: RemoteOp & { type: 'update' }): P
   };
   if (changes.title === undefined && changes.url === undefined) return; // already applied
 
-  const echo = await ctx.stores.echoes.add({
-    action: 'update',
-    uuid: op.uuid,
-    browserId: mapping.browserId,
-    ...changes,
-  });
-  const ok = await ctx.bookmarks.update(mapping.browserId, changes);
-  if (!ok) await ctx.stores.echoes.remove(echo.id); // no event will ever come
+  // One field per native call: Chromium applies title and URL as separate
+  // model changes and fires onChanged for each (title first, still carrying
+  // the old URL), so a combined echo record would miss the first event.
+  const steps = [
+    ...(changes.title !== undefined ? [{ title: changes.title }] : []),
+    ...(changes.url !== undefined ? [{ url: changes.url }] : []),
+  ];
+  for (const step of steps) {
+    const echo = await ctx.stores.echoes.add({
+      action: 'update',
+      uuid: op.uuid,
+      browserId: mapping.browserId,
+      ...step,
+    });
+    const ok = await ctx.bookmarks.update(mapping.browserId, step);
+    if (!ok) {
+      await ctx.stores.echoes.remove(echo.id); // no event will ever come
+      return;
+    }
+  }
 }
 
 async function applyMove(ctx: EngineEnv, op: RemoteOp & { type: 'move' }): Promise<void> {

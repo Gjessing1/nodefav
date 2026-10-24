@@ -197,3 +197,81 @@ test('Vivaldi hidden copies identify the excluded root when Trash is not exposed
     ['Bookmarks bar'],
   );
 });
+
+test('a localized Edge syncs only its favorites bar, whatever the root titles', async () => {
+  const fake = new FakeBookmarks(
+    ['Favorittlinje', 'Andre favoritter', 'Arbeidsområder', 'Slettet'],
+    {
+      browser: 'edge',
+    },
+  );
+  await fake.create({ parentId: '1', title: 'Daily', url: 'https://daily.example/' });
+  await fake.create({ parentId: '2', title: 'Hidden', url: 'https://hidden.example/' });
+  const ws = await fake.create({ parentId: '3', title: 'Workspaces' });
+  await fake.create({ parentId: ws.id, title: 'Daily', url: 'https://daily.example/' });
+  const h = createHarness({ fake });
+
+  await h.engine.sync({ reconcile: true });
+  await fake.create({ parentId: '2', title: 'Later', url: 'https://later.example/' });
+  await h.engine.idle();
+  await h.engine.sync({ force: true, reconcile: true });
+
+  const roots = (await h.server.getBookmarks()).roots;
+  assert.deepEqual(
+    roots.map((root) => root.title),
+    ['Favorittlinje'],
+  );
+  assert.deepEqual(
+    roots[0]?.children?.map((node) => node.title),
+    ['Daily'],
+  );
+  assert.equal((await h.engine.status()).queueDepth, 0);
+});
+
+test('a localized Edge root uploaded by an older version is dropped, then deletable', async () => {
+  // Before the fix the extension only knew English titles, so a Norwegian
+  // Edge uploaded "Andre favoritter" as a root of its own.
+  const fake = new FakeBookmarks(['Favorittlinje', 'Andre favoritter']);
+  await fake.create({ parentId: '1', title: 'Daily', url: 'https://daily.example/' });
+  await fake.create({ parentId: '2', title: 'Workspaces' });
+  const h = createHarness({ fake });
+  await h.engine.sync({ reconcile: true });
+  const leaked = (await h.server.getBookmarks()).roots.find(
+    (root) => root.title === 'Andre favoritter',
+  );
+  assert.ok(leaked, 'the old behaviour uploads the localized root');
+
+  // Extension update: the browser is now recognised as Edge.
+  fake.options.browser = 'edge';
+  await h.engine.sync({ force: true, reconcile: true });
+  const version = (await h.server.getOps(0, 1000)).serverVersion;
+
+  // Deleting the leaked cloud root leaves Edge's own root alone and is not
+  // re-uploaded.
+  await h.server.postOps([
+    {
+      opId: 'admin-1',
+      deviceId: 'admin',
+      timestamp: Date.now(),
+      type: 'delete',
+      uuid: leaked.uuid,
+    },
+  ]);
+  for (let i = 0; i < 2; i += 1) await h.engine.sync({ force: true, reconcile: true });
+
+  assert.deepEqual(
+    (await fake.getChildren('2')).map((node) => node.title),
+    ['Workspaces'],
+  );
+  assert.deepEqual(
+    (await h.server.getBookmarks()).roots.map((root) => root.title),
+    ['Favorittlinje'],
+  );
+  const device = await h.engine.deviceId();
+  const after = (await h.server.getOps(version, 1000)).ops;
+  assert.deepEqual(
+    after.filter((op) => op.deviceId === device),
+    [],
+  );
+  assert.equal((await h.engine.status()).lastError, undefined);
+});

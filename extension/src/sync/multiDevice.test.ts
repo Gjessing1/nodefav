@@ -234,3 +234,40 @@ test('a rebalance on one device converges cleanly on the other', async () => {
   assert.equal(titlesIn(b, 0).length, 152); // 150 + Shared + News
   assert.deepEqual(titlesIn(a, 0), titlesIn(b, 0));
 });
+
+test('a remote title + URL change is applied without echoing back', async () => {
+  // One op changing both fields (as the admin page and API scripts send) makes
+  // Chromium fire onChanged twice — title first, still with the old URL. That
+  // unmatched first event used to upload the old URL again.
+  const { server, a, b } = await twoProfiles(seedShared);
+  await a.fake.create({ parentId: '1', title: 'Old', url: 'https://old.example/' });
+  await converge(a, b);
+  const uuid = (await server.getBookmarks()).roots[0]?.children?.find(
+    (node) => node.title === 'Old',
+  )?.uuid;
+  assert.ok(uuid);
+  const before = (await server.getOps(0, 1000)).serverVersion;
+
+  await server.postOps([
+    {
+      opId: 'admin-edit',
+      deviceId: 'admin',
+      timestamp: a.now(),
+      type: 'update',
+      uuid,
+      title: 'New',
+      url: 'https://new.example/',
+    },
+  ]);
+  await converge(a, b);
+
+  const later = (await server.getOps(before, 1000)).ops;
+  assert.deepEqual(
+    later.map((op) => op.deviceId),
+    ['admin'],
+  );
+  for (const h of [a, b]) {
+    const node = await h.fake.get(await findByTitle(h.fake, 'New'));
+    assert.equal(node?.url, 'https://new.example/');
+  }
+});

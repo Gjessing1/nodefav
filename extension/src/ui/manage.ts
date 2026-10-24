@@ -7,6 +7,8 @@ import type {
   TrashItem,
 } from '@nodefav/shared';
 import { ApiClient } from '../api/client.js';
+import { chromeBookmarksApi } from '../chrome/bookmarksApi.js';
+import type { BookmarkNodeLite } from '../chrome/bookmarksApi.js';
 import { syncableRootTitle } from '../sync/context.js';
 import { compareVersions } from './device.js';
 import {
@@ -45,7 +47,7 @@ interface Data {
 let api: ApiClient | null = null;
 let self: { deviceId: string; version: string } = { deviceId: '', version: '0' };
 let data: Data | null = null;
-let localTree: chrome.bookmarks.BookmarkTreeNode[] = [];
+let localTree: BookmarkNodeLite[] = [];
 /** Folders the user expanded — kept across re-renders. */
 const open = new Set<string>();
 /** Row currently showing an inline form: edit an existing node, or add into a folder. */
@@ -90,7 +92,7 @@ async function load(): Promise<void> {
   const device = (await chrome.runtime.sendMessage({ type: 'nodefav:device' })) as
     { deviceId: string; version: string } | { error: string };
   if (!('error' in device)) self = device;
-  localTree = (await chrome.bookmarks.getTree()) ?? [];
+  localTree = await chromeBookmarksApi().getTree();
   await refresh();
 }
 

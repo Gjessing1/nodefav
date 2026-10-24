@@ -13,6 +13,16 @@ export interface BookmarkNodeLite {
   children?: BookmarkNodeLite[];
   /** Set (e.g. 'managed') on nodes the user cannot modify — never synced. */
   unmodifiable?: string;
+  /**
+   * Which permanent root this is ('bookmarks-bar', 'other', 'mobile', 'managed').
+   * Locale-independent; Chromium 134+ only.
+   */
+  folderType?: string;
+  /**
+   * Set by the facade on the invisible root ('0') in Edge, whose permanent root
+   * titles are localized ("Andre favoritter") and so can't be told apart by name.
+   */
+  browser?: 'edge';
 }
 
 export interface ChangeInfo {
@@ -57,9 +67,15 @@ export interface BookmarksApi {
   onRemoved(listener: (id: string, removeInfo: RemoveInfo) => void): void;
 }
 
+const IS_EDGE = typeof navigator !== 'undefined' && /\bEdg\//.test(navigator.userAgent);
+
 export function chromeBookmarksApi(): BookmarksApi {
   return {
-    getTree: () => chrome.bookmarks.getTree(),
+    getTree: async () => {
+      const tree: BookmarkNodeLite[] = await chrome.bookmarks.getTree();
+      if (IS_EDGE && tree[0]) tree[0].browser = 'edge';
+      return tree;
+    },
     getChildren: (parentId) => chrome.bookmarks.getChildren(parentId),
     get: async (id) => {
       try {

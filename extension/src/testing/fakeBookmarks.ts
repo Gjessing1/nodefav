@@ -41,7 +41,11 @@ export class FakeBookmarks implements BookmarksApi {
     removed: [] as Array<(id: string, info: RemoveInfo) => void>,
   };
 
-  constructor(rootTitles: string[] = ['Bookmarks bar', 'Other bookmarks']) {
+  constructor(
+    rootTitles: string[] = ['Bookmarks bar', 'Other bookmarks'],
+    /** Test lever: `browser` can be flipped to simulate an extension update. */
+    readonly options: { browser?: 'edge' } = {},
+  ) {
     this.nodes.set('0', { id: '0', title: '', childIds: [] });
     rootTitles.forEach((title, i) => {
       const id = String(i + 1);
@@ -83,7 +87,9 @@ export class FakeBookmarks implements BookmarksApi {
   // --- BookmarksApi ----------------------------------------------------------
 
   getTree(): Promise<BookmarkNodeLite[]> {
-    return Promise.resolve([this.toLite('0', true)]);
+    const root = this.toLite('0', true);
+    if (this.options.browser) root.browser = this.options.browser;
+    return Promise.resolve([root]);
   }
   getChildren(parentId: string): Promise<BookmarkNodeLite[]> {
     const parent = this.nodes.get(parentId);
@@ -123,13 +129,22 @@ export class FakeBookmarks implements BookmarksApi {
   update(id: string, changes: { title?: string; url?: string }): Promise<boolean> {
     const node = this.nodes.get(id);
     if (!node) return Promise.resolve(false);
-    if (changes.title !== undefined) node.title = changes.title;
-    if (changes.url !== undefined && node.url !== undefined) node.url = changes.url;
-    this.emit({
-      type: 'changed',
-      id,
-      info: { title: node.title, ...(changes.url !== undefined ? { url: node.url } : {}) },
-    });
+    // Like Chromium: title and URL are separate model changes, each firing
+    // onChanged with the node's state at that moment (title first).
+    const emitChanged = (): void =>
+      this.emit({
+        type: 'changed',
+        id,
+        info: { title: node.title, ...(node.url !== undefined ? { url: node.url } : {}) },
+      });
+    if (changes.title !== undefined) {
+      node.title = changes.title;
+      emitChanged();
+    }
+    if (changes.url !== undefined && node.url !== undefined) {
+      node.url = changes.url;
+      emitChanged();
+    }
     return Promise.resolve(true);
   }
 

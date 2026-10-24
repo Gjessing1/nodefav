@@ -52,23 +52,56 @@ export async function isInitialized(ctx: EngineEnv): Promise<boolean> {
  * and browser trash are internal stores. Vivaldi exposes Chromium's "Other
  * bookmarks" root to extensions although its bookmark UI does not show it;
  * its Trash root distinguishes that profile from the ordinary Chromium tree.
+ *
+ * Edge localizes its root titles ("Andre favoritter"), so there only the
+ * favorites bar syncs, identified by its folder type or its fixed id.
  */
 export function syncableRoots(tree: BookmarkNodeLite[]): BookmarkNodeLite[] {
   const roots = tree[0]?.children ?? [];
-  return roots.filter((root) => !root.unmodifiable && syncableRootTitle(tree, root.title));
+  if (tree[0]?.browser === 'edge') {
+    return roots.filter((root) => !root.unmodifiable && isBookmarksBar(root));
+  }
+  return roots.filter((root) => !root.unmodifiable && allowedRootTitle(tree, root.title));
 }
 
-/** Apply the same root policy to cloud roots before replaying them locally. */
+/** Chromium's permanent bookmark bar id, used when `folderType` is unavailable (< 134). */
+const BOOKMARKS_BAR_ID = '1';
+
+function isBookmarksBar(root: BookmarkNodeLite): boolean {
+  return root.folderType !== undefined
+    ? root.folderType === 'bookmarks-bar'
+    : root.id === BOOKMARKS_BAR_ID;
+}
+
+/**
+ * Apply the same root policy to cloud roots before replaying them locally. A
+ * cloud root titled like one of this browser's own excluded roots is that root
+ * (uploaded by an older version), so it stays out too.
+ */
 export function syncableRootTitle(tree: BookmarkNodeLite[], title: string): boolean {
+  if (!allowedRootTitle(tree, title)) return false;
+  const syncable = new Set(syncableRoots(tree).map((root) => root.id));
+  const normalized = normalizeTitle(title);
+  return !(tree[0]?.children ?? []).some(
+    (root) => !syncable.has(root.id) && normalizeTitle(root.title) === normalized,
+  );
+}
+
+function normalizeTitle(title: string): string {
+  return title.trim().toLowerCase();
+}
+
+/** Title-based policy for browsers whose root titles are known (English) names. */
+function allowedRootTitle(tree: BookmarkNodeLite[], title: string): boolean {
   const roots = tree[0]?.children ?? [];
-  const titles = new Set(roots.map((root) => root.title.trim().toLowerCase()));
-  const other = roots.find((root) => root.title.trim().toLowerCase() === 'other bookmarks');
-  const copies = new Set((other?.children ?? []).map((child) => child.title.trim().toLowerCase()));
+  const titles = new Set(roots.map((root) => normalizeTitle(root.title)));
+  const other = roots.find((root) => normalizeTitle(root.title) === 'other bookmarks');
+  const copies = new Set((other?.children ?? []).map((child) => normalizeTitle(child.title)));
   const importedEdgeRoots =
     copies.has('workspaces') && (copies.has('other favourites') || copies.has('other favorites'));
   const vivaldiLayout = (titles.has('trash') && !titles.has('speed dial')) || importedEdgeRoots;
   const edgeLayout = titles.has('other favourites') || titles.has('other favorites');
-  const normalized = title.trim().toLowerCase();
+  const normalized = normalizeTitle(title);
   if (
     normalized === 'workspaces' ||
     normalized === 'trash' ||
