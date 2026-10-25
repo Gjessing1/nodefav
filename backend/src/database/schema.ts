@@ -62,8 +62,8 @@ export const bookmarkMeta = sqliteTable('bookmark_meta', {
   uuid: text('uuid')
     .primaryKey()
     .references(() => bookmarks.uuid, { onDelete: 'cascade' }),
-  /** Link health: ok, failing (recent errors), dead (persistent), skipped (non-http). */
-  health: text('health', { enum: ['ok', 'failing', 'dead', 'skipped'] }).notNull(),
+  /** Only repeated 404/410 responses count as dead; ambiguous checks are unverified. */
+  health: text('health', { enum: ['ok', 'failing', 'dead', 'unverified', 'skipped'] }).notNull(),
   /** HTTP status of the last attempt; null when the request itself failed. */
   httpStatus: integer('http_status'),
   pageTitle: text('page_title'),

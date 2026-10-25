@@ -2,25 +2,137 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>nodefav</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>nodefav bookmarks</title>
     <style>
+      :root {
+        color-scheme: light dark;
+      }
       body {
-        font-family: system-ui, sans-serif;
-        min-width: 17rem;
+        font:
+          14px system-ui,
+          sans-serif;
+        width: 370px;
+        max-width: 100%;
         margin: 0;
-        padding: 0.8rem 1rem;
-        color: #1a1a1a;
-        font-size: 0.85rem;
+        color: CanvasText;
+        background: Canvas;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 14px 8px;
       }
       h1 {
-        font-size: 1rem;
-        margin: 0 0 0.5rem;
+        font-size: 17px;
+        margin: 0;
+        flex: 1;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        color: inherit;
+      }
+      .icon-button {
+        border: 1px solid color-mix(in srgb, CanvasText 22%, Canvas);
+        background: Canvas;
+        border-radius: 6px;
+        padding: 5px 9px;
+      }
+      #search {
+        box-sizing: border-box;
+        display: block;
+        width: calc(100% - 28px);
+        margin: 2px 14px 10px;
+        padding: 8px 10px;
+        font: inherit;
+        border: 1px solid color-mix(in srgb, CanvasText 28%, Canvas);
+        border-radius: 6px;
+        background: Canvas;
+        color: CanvasText;
+      }
+      #location {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 14px 8px;
+        min-height: 22px;
+        color: GrayText;
+      }
+      #location button {
+        border: 0;
+        background: none;
+        color: LinkText;
+        padding: 0;
+      }
+      #folderName {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #items {
+        max-height: 440px;
+        min-height: 90px;
+        overflow: auto;
+        padding: 0 7px 8px;
+      }
+      .item {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        width: 100%;
+        gap: 10px;
+        padding: 9px 8px;
+        border: 0;
+        border-radius: 6px;
+        text-align: left;
+        text-decoration: none;
+        background: transparent;
+        color: CanvasText;
+      }
+      .item:hover,
+      .item:focus-visible {
+        background: color-mix(in srgb, CanvasText 9%, Canvas);
+        outline: none;
+      }
+      .item .symbol {
+        width: 20px;
+        flex: none;
+        text-align: center;
+      }
+      .item .text {
+        min-width: 0;
+        flex: 1;
+      }
+      .item .title,
+      .item .subtitle {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .item .subtitle {
+        color: GrayText;
+        font-size: 12px;
+      }
+      .empty {
+        color: GrayText;
+        padding: 12px;
+        margin: 0;
+      }
+      #settingsPanel {
+        border-top: 1px solid color-mix(in srgb, CanvasText 18%, Canvas);
+        padding: 12px 14px;
+      }
+      #settingsPanel[hidden] {
+        display: none;
       }
       dl {
         display: grid;
         grid-template-columns: max-content 1fr;
-        gap: 0.15rem 0.8rem;
-        margin: 0 0 0.7rem;
+        gap: 3px 12px;
+        margin: 0 0 12px;
       }
       dt {
         font-weight: 600;
@@ -31,30 +143,64 @@
       }
       .buttons {
         display: flex;
-        gap: 0.5rem;
+        gap: 7px;
+        flex-wrap: wrap;
       }
-      button {
-        padding: 0.3rem 0.8rem;
-        font: inherit;
+      .buttons button {
+        padding: 5px 8px;
       }
       .error {
         color: #b00020;
       }
       #message {
-        min-height: 1rem;
-        margin: 0.5rem 0 0;
+        margin: 8px 0 0;
+        min-height: 1em;
+      }
+      @media (min-width: 700px) {
+        body {
+          width: min(100%, 760px);
+          margin: auto;
+        }
+        #items {
+          max-height: none;
+        }
       }
     </style>
   </head>
   <body>
-    <h1>nodefav</h1>
-    <dl id="status"></dl>
-    <div class="buttons">
-      <button id="syncNow">Sync now</button>
-      <button id="openManage">Admin</button>
-      <button id="openOptions">Options</button>
+    <header>
+      <h1>Bookmarks</h1>
+      <button id="openTab" class="icon-button" title="Open bookmarks in a tab">Open in tab</button>
+      <button
+        id="settingsToggle"
+        class="icon-button"
+        aria-expanded="false"
+        aria-controls="settingsPanel"
+        title="Settings"
+      >
+        ⚙ Settings
+      </button>
+    </header>
+    <input
+      id="search"
+      type="search"
+      placeholder="Search bookmarks and folders…"
+      aria-label="Search bookmarks and folders"
+      autofocus
+    />
+    <div id="location">
+      <button id="back" hidden>← Back</button><span id="folderName">All bookmarks</span>
     </div>
-    <p id="message"></p>
+    <main id="items" aria-live="polite"></main>
+    <section id="settingsPanel" hidden>
+      <dl id="status"></dl>
+      <div class="buttons">
+        <button id="syncNow">Sync now</button>
+        <button id="openManage">Admin</button>
+        <button id="openOptions">Options</button>
+      </div>
+      <p id="message"></p>
+    </section>
     <script type="module" src="popup.js"></script>
   </body>
 </html>

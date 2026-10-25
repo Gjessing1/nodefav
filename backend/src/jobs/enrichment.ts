@@ -36,6 +36,7 @@ export interface EnrichmentResult {
   ok: number;
   failing: number;
   dead: number;
+  unverified: number;
   skipped: number;
 }
 
@@ -75,7 +76,14 @@ export async function runEnrichment(
     .limit(batchSize)
     .all();
 
-  const result: EnrichmentResult = { checked: 0, ok: 0, failing: 0, dead: 0, skipped: 0 };
+  const result: EnrichmentResult = {
+    checked: 0,
+    ok: 0,
+    failing: 0,
+    dead: 0,
+    unverified: 0,
+    skipped: 0,
+  };
   for (const candidate of candidates) {
     const outcome = await checkOne(fetchFn, candidate.url);
     const health: LinkHealth =
@@ -83,9 +91,11 @@ export async function runEnrichment(
         ? 'skipped'
         : outcome.kind === 'ok'
           ? 'ok'
-          : (candidate.failures ?? 0) + 1 >= DEAD_LINK_THRESHOLD
-            ? 'dead'
-            : 'failing';
+          : outcome.kind === 'unverified'
+            ? 'unverified'
+            : (candidate.failures ?? 0) + 1 >= DEAD_LINK_THRESHOLD
+              ? 'dead'
+              : 'failing';
     const failures = outcome.kind === 'failed' ? (candidate.failures ?? 0) + 1 : 0;
     const row = {
       health,
@@ -113,6 +123,7 @@ export async function runEnrichment(
 type CheckOutcome =
   | { kind: 'ok'; httpStatus: number; pageTitle?: string; faviconUrl?: string }
   | { kind: 'failed'; httpStatus?: number }
+  | { kind: 'unverified'; httpStatus?: number }
   | { kind: 'skipped' };
 
 async function checkOne(fetchFn: typeof fetch, url: string | null): Promise<CheckOutcome> {
@@ -133,7 +144,10 @@ async function checkOne(fetchFn: typeof fetch, url: string | null): Promise<Chec
     });
     if (response.status >= 400) {
       await response.body?.cancel().catch(() => undefined);
-      return { kind: 'failed', httpStatus: response.status };
+      return {
+        kind: response.status === 404 || response.status === 410 ? 'failed' : 'unverified',
+        httpStatus: response.status,
+      };
     }
     const contentType = response.headers.get('content-type') ?? '';
     let pageTitle: string | undefined;
@@ -149,7 +163,8 @@ async function checkOne(fetchFn: typeof fetch, url: string | null): Promise<Chec
     faviconUrl ??= new URL('/favicon.ico', response.url || parsed.href).href;
     return { kind: 'ok', httpStatus: response.status, pageTitle, faviconUrl };
   } catch {
-    return { kind: 'failed' };
+    // DNS, VPN, auth and bot protection can differ between the server and browser.
+    return { kind: 'unverified' };
   }
 }
 

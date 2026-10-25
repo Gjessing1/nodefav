@@ -22,6 +22,7 @@ mkdirSync('dist', { recursive: true });
 copyFileSync('src/manifest.json', 'dist/manifest.json');
 copyFileSync('src/ui/options.html', 'dist/options.html');
 copyFileSync('src/ui/popup.html', 'dist/popup.html');
+copyFileSync('src/ui/popup.html', 'dist/browse.html');
 copyFileSync('src/ui/manage.html', 'dist/manage.html');
 mkdirSync('dist/icons', { recursive: true });
 for (const icon of readdirSync('src/icons')) {

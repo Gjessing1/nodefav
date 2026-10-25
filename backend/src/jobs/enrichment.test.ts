@@ -108,7 +108,7 @@ test('enrichment checks live bookmarks only and records title, favicon, health',
   });
   const result = await runEnrichment(db, { fetchFn, now: 10_000 });
 
-  assert.deepEqual(result, { checked: 2, ok: 2, failing: 0, dead: 0, skipped: 0 });
+  assert.deepEqual(result, { checked: 2, ok: 2, failing: 0, dead: 0, unverified: 0, skipped: 0 });
   assert.ok(!fetchFn.calls.includes('https://gone.test/'));
 
   const meta = listMeta(db);
@@ -134,18 +134,18 @@ test('non-http schemes are skipped once and never rechecked', async () => {
   const fetchFn = fakeFetch({});
 
   const first = await runEnrichment(db, { fetchFn, now: 10_000 });
-  assert.deepEqual(first, { checked: 1, ok: 0, failing: 0, dead: 0, skipped: 1 });
+  assert.deepEqual(first, { checked: 1, ok: 0, failing: 0, dead: 0, unverified: 0, skipped: 1 });
   assert.equal(fetchFn.calls.length, 0);
 
   const later = await runEnrichment(db, { fetchFn, now: 10_000 + 2 * RECHECK_INTERVAL_MS });
   assert.equal(later.checked, 0);
 });
 
-test('consecutive failures escalate to dead, and a recovery resets them', async () => {
+test('consecutive 404 responses escalate to dead, and a recovery resets them', async () => {
   const db = createDb(':memory:');
   applyOps(db, [createBookmark('flaky', 'https://down.test/')]);
 
-  const failing = fakeFetch({}); // unrouted → network error
+  const failing = fakeFetch({ 'https://down.test/': () => htmlResponse('missing', 404) });
   let now = 10_000;
   for (let attempt = 1; attempt <= DEAD_LINK_THRESHOLD; attempt++) {
     const result = await runEnrichment(db, { fetchFn: failing, now });
@@ -160,7 +160,7 @@ test('consecutive failures escalate to dead, and a recovery resets them', async 
   // Dead links stay on the recheck schedule and may recover.
   const recovered = fakeFetch({ 'https://down.test/': () => htmlResponse('<title>Back</title>') });
   const result = await runEnrichment(db, { fetchFn: recovered, now });
-  assert.deepEqual(result, { checked: 1, ok: 1, failing: 0, dead: 0, skipped: 0 });
+  assert.deepEqual(result, { checked: 1, ok: 1, failing: 0, dead: 0, unverified: 0, skipped: 0 });
   const [meta] = listMeta(db);
   assert.equal(meta?.health, 'ok');
   assert.equal(meta?.consecutiveFailures, 0);
@@ -175,14 +175,37 @@ test('failures keep the last known title and favicon', async () => {
   const ok = fakeFetch({ 'https://site.test/': () => htmlResponse('<title>Known</title>') });
   await runEnrichment(db, { fetchFn: ok, now: 10_000 });
 
-  const failing = fakeFetch({ 'https://site.test/': () => htmlResponse('gone', 500) });
+  const failing = fakeFetch({ 'https://site.test/': () => htmlResponse('gone', 410) });
   await runEnrichment(db, { fetchFn: failing, now: 10_000 + RECHECK_INTERVAL_MS });
 
   const [meta] = listMeta(db);
   assert.equal(meta?.health, 'failing');
-  assert.equal(meta?.httpStatus, 500);
+  assert.equal(meta?.httpStatus, 410);
   assert.equal(meta?.pageTitle, 'Known');
   assert.equal(meta?.okAt, 10_000);
+});
+
+test('network failures and blocked requests are unverified and do not accumulate dead strikes', async () => {
+  const db = createDb(':memory:');
+  applyOps(db, [
+    createBookmark('intranet', 'https://intranet.example/'),
+    createBookmark('blocked', 'https://www.allabolag.se/'),
+    createBookmark('missing', 'https://missing.example/'),
+  ]);
+  const first = fakeFetch({
+    'https://www.allabolag.se/': () => htmlResponse('blocked', 403),
+    'https://missing.example/': () => htmlResponse('missing', 404),
+  });
+  await runEnrichment(db, { fetchFn: first, now: 10_000 });
+  for (let attempt = 1; attempt <= DEAD_LINK_THRESHOLD; attempt++) {
+    await runEnrichment(db, { fetchFn: first, now: 10_000 + attempt * RECHECK_INTERVAL_MS });
+  }
+  const byTitle = new Map(listMeta(db).map((item) => [item.title, item]));
+  assert.equal(byTitle.get('intranet')?.health, 'unverified');
+  assert.equal(byTitle.get('blocked')?.health, 'unverified');
+  assert.equal(byTitle.get('blocked')?.httpStatus, 403);
+  assert.equal(byTitle.get('blocked')?.consecutiveFailures, 0);
+  assert.equal(byTitle.get('missing')?.health, 'dead');
 });
 
 test('bookmarks are rechecked only after the recheck interval', async () => {

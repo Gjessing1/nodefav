@@ -13,6 +13,7 @@ import { syncableRootTitle } from '../sync/context.js';
 import { compareVersions } from './device.js';
 import {
   countDescendants,
+  dropDestination,
   endKey,
   folderChoices,
   indexTree,
@@ -52,6 +53,7 @@ let localTree: BookmarkNodeLite[] = [];
 const open = new Set<string>();
 /** Row currently showing an inline form: edit an existing node, or add into a folder. */
 let editing: { mode: 'edit' | 'add-bookmark' | 'add-folder'; uuid: string } | null = null;
+let draggingUuid: string | null = null;
 
 const message = document.getElementById('message') as HTMLParagraphElement;
 const search = document.getElementById('search') as HTMLInputElement;
@@ -218,6 +220,51 @@ function nodeRow(node: BookmarkNode): HTMLElement[] {
   const isRoot = node.parentUuid === null;
   const meta = data.meta.get(node.uuid);
   const row = el('div', { className: 'row' });
+  row.draggable = !isRoot;
+  if (!isRoot) {
+    row.title = 'Drag to reorder or move to another folder';
+    row.addEventListener('dragstart', (event) => {
+      draggingUuid = node.uuid;
+      event.dataTransfer?.setData('text/plain', node.uuid);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      draggingUuid = null;
+      row.classList.remove('drag-before', 'drag-inside', 'drag-after');
+    });
+  }
+  const placement = (event: DragEvent): 'before' | 'inside' | 'after' => {
+    const ratio =
+      (event.clientY - row.getBoundingClientRect().top) / row.getBoundingClientRect().height;
+    if (node.type === 'folder' && (isRoot || (ratio >= 0.25 && ratio <= 0.75))) return 'inside';
+    return ratio < 0.5 ? 'before' : 'after';
+  };
+  row.addEventListener('dragover', (event) => {
+    if (!draggingUuid || !data) return;
+    event.stopPropagation();
+    const where = placement(event);
+    row.classList.remove('drag-before', 'drag-inside', 'drag-after');
+    if (!dropDestination(data.roots, draggingUuid, node.uuid, where)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    row.classList.add(`drag-${where}`);
+  });
+  row.addEventListener('dragleave', () =>
+    row.classList.remove('drag-before', 'drag-inside', 'drag-after'),
+  );
+  row.addEventListener('drop', (event) => {
+    event.stopPropagation();
+    row.classList.remove('drag-before', 'drag-inside', 'drag-after');
+    if (!draggingUuid || !data) return;
+    const destination = dropDestination(data.roots, draggingUuid, node.uuid, placement(event));
+    if (!destination) return;
+    event.preventDefault();
+    open.add(destination.parentUuid);
+    void send([{ type: 'move', uuid: draggingUuid, ...destination }]).then((ok) => {
+      if (ok) say('Bookmark moved.');
+    });
+    draggingUuid = null;
+  });
 
   if (node.type === 'folder') {
     row.append(el('span', { className: 'caret', textContent: '▶' }));
@@ -240,12 +287,17 @@ function nodeRow(node: BookmarkNode): HTMLElement[] {
     }
     row.append(el('span', { className: 'spacer' }));
   } else {
-    if (meta?.health === 'dead' || meta?.health === 'failing') {
+    if (meta?.health === 'dead' || meta?.health === 'failing' || meta?.health === 'unverified') {
       row.append(
         el('span', {
           className: `badge ${meta.health}`,
           textContent: meta.health,
-          title: meta.httpStatus ? `HTTP ${meta.httpStatus}` : 'no response',
+          title:
+            meta.health === 'unverified'
+              ? `Could not verify from the server${meta.httpStatus ? ` (HTTP ${meta.httpStatus})` : ''}; the link may work in your browser`
+              : meta.health === 'dead'
+                ? `Repeated missing-page response (HTTP ${meta.httpStatus ?? 'unknown'})`
+                : `Missing-page response (HTTP ${meta.httpStatus ?? 'unknown'}); waiting for more checks`,
         }),
       );
     }

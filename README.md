@@ -2,11 +2,13 @@
 
 Cross-browser bookmark synchronization built around the browser's **native bookmark
 experience**. You keep using the Bookmark Bar, Ctrl+D and the built-in bookmark
-manager — a Manifest V3 extension acts as an invisible sync layer, and a self-hosted
-cloud backend is the source of truth with a richer bookmark model (history, soft
-deletes, metadata).
+manager. The extension popup also lets you browse and search bookmarks, while the
+self-hosted backend stores sync history, soft deletes and metadata.
 
 Targets all Chromium browsers: Chrome, Edge, Brave, Vivaldi, Opera.
+
+The latest extension zip is always available from the
+[Homepage download tile](https://home.gjessing.io/downloads/nodefav-extension-latest.zip).
 
 ## Stack
 

@@ -36,6 +36,42 @@ export function shiftKey(parent: BookmarkNode, uuid: string, direction: -1 | 1):
   return keyBetween(low, high);
 }
 
+/** Resolve a drag target to a normal move op. Reject roots, cycles and self-drops. */
+export function dropDestination(
+  roots: BookmarkNode[],
+  sourceUuid: string,
+  targetUuid: string,
+  placement: 'before' | 'inside' | 'after',
+): { parentUuid: string; sortOrder: string } | null {
+  const index = indexTree(roots);
+  const sourceEntry = index.get(sourceUuid);
+  const targetEntry = index.get(targetUuid);
+  const source = sourceEntry?.node;
+  const target = targetEntry?.node;
+  if (!source || !target || !sourceEntry.parent || sourceUuid === targetUuid) return null;
+  const parentUuid = placement === 'inside' ? targetUuid : targetEntry.parent?.uuid;
+  if (!parentUuid || (placement === 'inside' && target.type !== 'folder')) return null;
+  let ancestor: string | null = parentUuid;
+  while (ancestor) {
+    if (ancestor === sourceUuid) return null;
+    ancestor = index.get(ancestor)?.parent?.uuid ?? null;
+  }
+  const parent = index.get(parentUuid)?.node;
+  if (!parent) return null;
+  if (placement === 'inside') return { parentUuid, sortOrder: endKey(parent, sourceUuid) };
+  const siblings = sortNodes((parent.children ?? []).filter((node) => node.uuid !== sourceUuid));
+  const at = siblings.findIndex((node) => node.uuid === targetUuid);
+  if (at < 0) return null;
+  const before = placement === 'before' ? at : at + 1;
+  return {
+    parentUuid,
+    sortOrder: keyBetween(
+      siblings[before - 1]?.sortOrder ?? null,
+      siblings[before]?.sortOrder ?? null,
+    ),
+  };
+}
+
 export interface FolderChoice {
   uuid: string;
   /** "Favorites bar / 2 Privat / Nyheter" */

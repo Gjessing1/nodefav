@@ -154,11 +154,12 @@ export interface GetChecksumResponse {
 /**
  * Cloud-side enrichment health of a bookmark's URL (Phase 6 background job):
  * - `ok`: last fetch succeeded.
- * - `failing`: recent failures, below the dead-link threshold.
- * - `dead`: failed the threshold number of consecutive checks.
+ * - `failing`: recent explicit missing-page responses, below the dead-link threshold.
+ * - `dead`: repeated explicit 404/410 responses.
+ * - `unverified`: the server cannot establish whether the page works in a browser.
  * - `skipped`: not fetchable (non-http scheme); never rechecked.
  */
-export type LinkHealth = 'ok' | 'failing' | 'dead' | 'skipped';
+export type LinkHealth = 'ok' | 'failing' | 'dead' | 'unverified' | 'skipped';
 
 /** Enrichment record for one bookmark, served by `GET /api/meta`. */
 export interface MetaItem {

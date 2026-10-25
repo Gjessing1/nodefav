@@ -93,6 +93,15 @@ jobs:
           echo "EXTENSION_ZIP=$FILE" >> "$GITHUB_ENV"
           echo "EXTENSION_VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      # Homepage serves a stable URL, so its download tile always points at
+      # the zip from the newest successful main build.
+      - name: Update homepage extension download
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cat "$EXTENSION_ZIP" | docker run --rm -i \
+            -v /home/gjessing/docker/homepage/downloads:/downloads \
+            alpine:3.20 sh -c 'cat > /downloads/nodefav-extension-next.zip && mv /downloads/nodefav-extension-next.zip /downloads/nodefav-extension-latest.zip'
+
       # Redeploy on the host, against the host daemon via the mounted Docker socket.
       # Pulls git.gjessing.io/...:latest — the image just pushed above. Guarded on main
       # because this workflow also runs for v* tags and workflow_dispatch.

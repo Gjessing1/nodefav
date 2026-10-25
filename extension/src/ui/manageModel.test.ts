@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { BookmarkNode, TrashItem } from '@nodefav/shared';
 import {
   countDescendants,
+  dropDestination,
   endKey,
   folderChoices,
   indexTree,
@@ -68,6 +69,19 @@ test('shiftKey swaps one step and stops at the edges', () => {
   assert.equal(shiftKey(privat, 'news', -1), null);
   assert.equal(shiftKey(privat, 'bank', 1), null);
   assert.equal(shiftKey(privat, 'missing', 1), null);
+});
+
+test('drop destinations reorder siblings, move into folders, and reject cycles', () => {
+  const roots = tree();
+  const before = dropDestination(roots, 'bank', 'news', 'before');
+  assert.equal(before?.parentUuid, 'privat');
+  assert.ok(before!.sortOrder < 'i');
+  const inside = dropDestination(roots, 'bank', 'work', 'inside');
+  assert.equal(inside?.parentUuid, 'work');
+  assert.ok(inside?.sortOrder);
+  assert.equal(dropDestination(roots, 'privat', 'news', 'inside'), null);
+  assert.equal(dropDestination(roots, 'bar', 'work', 'inside'), null);
+  assert.equal(dropDestination(roots, 'bank', 'bank', 'before'), null);
 });
 
 test('folder choices are paths in tree order, excluding the moved subtree', () => {
