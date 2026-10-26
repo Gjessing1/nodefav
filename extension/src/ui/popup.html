@@ -54,7 +54,7 @@
       }
       #location {
         display: flex;
-        align-items: center;
+        align-items: baseline;
         gap: 8px;
         padding: 0 14px 8px;
         min-height: 22px;
@@ -66,7 +66,44 @@
         color: LinkText;
         padding: 0;
       }
+      #back,
+      #home {
+        flex: none;
+        white-space: nowrap;
+      }
+      #breadcrumbs {
+        flex: 1;
+        min-width: 0;
+      }
+      #breadcrumbList {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 6px;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      #breadcrumbList li {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        min-width: 0;
+        max-width: 100%;
+      }
+      .breadcrumb-title {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        text-align: left;
+      }
+      #location button:hover {
+        text-decoration: underline;
+      }
+      .breadcrumb-separator {
+        flex: none;
+      }
       #folderName {
+        flex: 1;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -189,7 +226,14 @@
       autofocus
     />
     <div id="location">
-      <button id="back" hidden>← Back</button><span id="folderName">All bookmarks</span>
+      <button id="back" hidden>← Back</button>
+      <nav id="breadcrumbs" aria-label="Bookmark breadcrumb">
+        <ol id="breadcrumbList">
+          <li><span aria-current="page">All bookmarks</span></li>
+        </ol>
+      </nav>
+      <span id="folderName" hidden></span>
+      <button id="home" hidden title="Go to your start folder">Home</button>
     </div>
     <main id="items" aria-live="polite"></main>
     <section id="settingsPanel" hidden>

@@ -7,6 +7,13 @@ self-hosted backend stores sync history, soft deletes and metadata.
 
 Targets all Chromium browsers: Chrome, Edge, Brave, Vivaldi, Opera.
 
+In **Options**, choose the folder opened when browsing bookmarks. The popup
+automatically opens the only synced root when no folder is chosen; search still
+covers all synced bookmarks. Breadcrumbs in the popup and full-tab browser show
+the current folder path and let you jump to any parent folder or all bookmarks.
+The **Admin** page can move empty folder trees and
+obsolete, unsynced cloud roots to its restorable Trash.
+
 The latest extension zip is always available from the
 [Homepage download tile](https://home.gjessing.io/downloads/nodefav-extension-latest.zip).
 

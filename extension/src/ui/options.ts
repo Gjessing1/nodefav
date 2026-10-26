@@ -1,6 +1,8 @@
 import type { SyncStatus } from '../sync/engine.js';
 import type { RealtimeState } from '../sync/realtime.js';
 import { getSyncInterval, normalizeSyncInterval } from './settings.js';
+import { chromeBookmarksApi, type BookmarkNodeLite } from '../chrome/bookmarksApi.js';
+import { syncableRoots } from '../sync/context.js';
 
 /** Engine snapshot augmented by the background with the realtime feed state. */
 type UiStatus = SyncStatus & { realtime?: RealtimeState };
@@ -9,6 +11,7 @@ const serverUrlInput = document.getElementById('serverUrl') as HTMLInputElement;
 const tokenInput = document.getElementById('token') as HTMLInputElement;
 const syncIntervalInput = document.getElementById('syncInterval') as HTMLInputElement;
 const deviceNameInput = document.getElementById('deviceName') as HTMLInputElement;
+const browseStartInput = document.getElementById('browseStartFolder') as HTMLSelectElement;
 const message = document.getElementById('message') as HTMLParagraphElement;
 const statusList = document.getElementById('status') as HTMLDListElement;
 const chooser = document.getElementById('chooser') as HTMLElement;
@@ -21,6 +24,7 @@ async function loadConfig(): Promise<void> {
   serverUrlInput.value = serverUrl ?? '';
   tokenInput.value = token ?? '';
   syncIntervalInput.value = String(await getSyncInterval());
+  await loadBrowseFolders();
   const device = (await chrome.runtime.sendMessage({ type: 'nodefav:device' })) as
     { deviceId: string; name: string; version: string } | { error: string };
   if (!('error' in device)) {
@@ -28,6 +32,38 @@ async function loadConfig(): Promise<void> {
     setText('version', `v${device.version}`);
     setText('deviceId', `Device ID: ${device.deviceId}`);
   }
+}
+
+async function loadBrowseFolders(): Promise<void> {
+  const [tree, stored] = await Promise.all([
+    chromeBookmarksApi().getTree(),
+    chrome.storage.local.get('browseStartFolder') as Promise<{ browseStartFolder?: string }>,
+  ]);
+  const choice = (value: string, label: string): HTMLOptionElement => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    return option;
+  };
+  browseStartInput.replaceChildren(
+    choice('auto', 'Automatic (open the only bookmark root)'),
+    choice('all', 'All bookmarks'),
+  );
+  const appendFolders = (nodes: BookmarkNodeLite[], path: string[]): void => {
+    for (const node of nodes) {
+      if (node.url) continue;
+      const label = [...path, node.title];
+      browseStartInput.append(choice(`folder:${node.id}`, label.join(' / ')));
+      appendFolders(node.children ?? [], label);
+    }
+  };
+  appendFolders(syncableRoots(tree), []);
+  const preference = stored.browseStartFolder ?? 'auto';
+  browseStartInput.value = [...browseStartInput.options].some(
+    (option) => option.value === preference,
+  )
+    ? preference
+    : 'auto';
 }
 
 function setText(id: string, text: string): void {
@@ -116,6 +152,12 @@ function renderStatus(status: UiStatus): void {
 }
 
 document.getElementById('save')?.addEventListener('click', () => void save());
+browseStartInput.addEventListener('change', () => {
+  void chrome.storage.local.set({ browseStartFolder: browseStartInput.value }).then(() => {
+    message.textContent = 'Start folder saved.';
+    message.className = '';
+  });
+});
 document
   .getElementById('syncNow')
   ?.addEventListener('click', () => void syncNow('nodefav:syncNow'));

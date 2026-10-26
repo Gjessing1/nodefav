@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "nodefav",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Bookmark browsing, search and sync to your own cloud.",
   "minimum_chrome_version": "120",
   "icons": {

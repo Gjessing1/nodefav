@@ -228,6 +228,12 @@ async function applyMove(ctx: EngineEnv, op: RemoteOp & { type: 'move' }): Promi
 async function applyDelete(ctx: EngineEnv, op: RemoteOp & { type: 'delete' }): Promise<void> {
   const mapping = await ctx.stores.mappings.getByUuid(op.uuid);
   if (!mapping) return; // never materialized or already gone
+  if (mapping.parentBrowserId === BROWSER_ROOT_ID) {
+    // Permanent browser roots cannot be removed. Drop only the cloud mapping;
+    // excluded roots then stay local, and eligible roots can be reconciled.
+    await ctx.stores.mappings.removeSubtree(mapping.browserId);
+    return;
+  }
   await ctx.stores.echoes.add({ action: 'delete', uuid: op.uuid, browserId: mapping.browserId });
   await ctx.bookmarks.removeTree(mapping.browserId);
   await ctx.stores.mappings.removeSubtree(mapping.browserId);

@@ -133,6 +133,39 @@ export function countDescendants(node: BookmarkNode): number {
   return (node.children ?? []).reduce((sum, child) => sum + 1 + countDescendants(child), 0);
 }
 
+/** Topmost folders with no bookmarks below them. Native roots stay unless explicitly excluded. */
+export function emptyFolderCandidates(
+  roots: BookmarkNode[],
+  mayRemoveRoot: (root: BookmarkNode) => boolean,
+): BookmarkNode[] {
+  const candidates: BookmarkNode[] = [];
+  const visit = (node: BookmarkNode, isRoot: boolean): boolean => {
+    if (node.type !== 'folder') return false;
+    let empty = true;
+    for (const child of node.children ?? []) {
+      if (!visit(child, false)) empty = false;
+    }
+    if (empty && (!isRoot || mayRemoveRoot(node))) {
+      // One delete covers the whole empty subtree.
+      const descendants = new Set<string>();
+      const collect = (folder: BookmarkNode): void => {
+        for (const child of folder.children ?? []) {
+          descendants.add(child.uuid);
+          if (child.type === 'folder') collect(child);
+        }
+      };
+      collect(node);
+      for (let i = candidates.length - 1; i >= 0; i -= 1) {
+        if (descendants.has(candidates[i]!.uuid)) candidates.splice(i, 1);
+      }
+      candidates.push(node);
+    }
+    return empty;
+  };
+  for (const root of roots) visit(root, true);
+  return candidates;
+}
+
 export interface TrashGroup {
   item: TrashItem;
   /** Trashed nodes below it that a restore brings back along with it. */

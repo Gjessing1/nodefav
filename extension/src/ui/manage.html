@@ -94,6 +94,15 @@
         width: 100%;
         margin-bottom: 0.8rem;
       }
+      .browse-tools {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .browse-tools #search {
+        flex: 1;
+        min-width: 0;
+      }
       #message {
         min-height: 1.2rem;
         margin: 0 0 0.6rem;
@@ -308,7 +317,17 @@
     <p id="message"></p>
 
     <section id="tab-bookmarks">
-      <input id="search" type="search" placeholder="Search titles and URLs…" />
+      <div class="browse-tools">
+        <input id="search" type="search" placeholder="Search titles and URLs…" />
+        <button
+          id="removeEmpty"
+          type="button"
+          title="Remove empty folders across all bookmarks"
+          disabled
+        >
+          Remove empty folders
+        </button>
+      </div>
       <div id="tree"></div>
       <p class="hint">
         Changes here go to the cloud and reach every browser within seconds, just like edits made in

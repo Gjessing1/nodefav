@@ -3,6 +3,7 @@ import type { RealtimeState } from '../sync/realtime.js';
 import { chromeBookmarksApi, type BookmarkNodeLite } from '../chrome/bookmarksApi.js';
 import { syncableRoots } from '../sync/context.js';
 import { getSyncInterval } from './settings.js';
+import { browseFolderPath, browseStartId } from './browseModel.js';
 
 type UiStatus = SyncStatus & { realtime?: RealtimeState };
 type Bookmark = BookmarkNodeLite;
@@ -10,7 +11,10 @@ type Bookmark = BookmarkNodeLite;
 const search = document.getElementById('search') as HTMLInputElement;
 const items = document.getElementById('items') as HTMLElement;
 const back = document.getElementById('back') as HTMLButtonElement;
+const home = document.getElementById('home') as HTMLButtonElement;
 const folderName = document.getElementById('folderName') as HTMLElement;
+const breadcrumbs = document.getElementById('breadcrumbs') as HTMLElement;
+const breadcrumbList = document.getElementById('breadcrumbList') as HTMLOListElement;
 const settings = document.getElementById('settingsPanel') as HTMLElement;
 const settingsToggle = document.getElementById('settingsToggle') as HTMLButtonElement;
 if (location.pathname.endsWith('/browse.html')) {
@@ -20,6 +24,8 @@ const statusList = document.getElementById('status') as HTMLDListElement;
 const message = document.getElementById('message') as HTMLParagraphElement;
 let tree: Bookmark[] = [];
 let currentId: string | null = null;
+let startPreference = 'auto';
+let initialized = false;
 
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -73,8 +79,40 @@ function row(node: Bookmark, path = ''): HTMLElement {
   return item;
 }
 
+function renderBreadcrumbs(): void {
+  const path = [{ id: null, title: 'All bookmarks' }, ...browseFolderPath(tree, currentId)];
+  breadcrumbList.replaceChildren(
+    ...path.map((folder, index) => {
+      const item = element('li');
+      if (index > 0) {
+        const separator = element('span', 'breadcrumb-separator');
+        separator.textContent = '/';
+        separator.setAttribute('aria-hidden', 'true');
+        item.append(separator);
+      }
+      const current = index === path.length - 1;
+      const label = element(current ? 'span' : 'button', 'breadcrumb-title');
+      label.textContent = folder.title || '(untitled)';
+      if (current) {
+        label.setAttribute('aria-current', 'page');
+      } else {
+        (label as HTMLButtonElement).type = 'button';
+        label.addEventListener('click', () => {
+          currentId = folder.id;
+          search.value = '';
+          render();
+        });
+      }
+      item.append(label);
+      return item;
+    }),
+  );
+}
+
 function render(): void {
   const query = search.value.trim().toLocaleLowerCase();
+  breadcrumbs.hidden = Boolean(query);
+  folderName.hidden = !query;
   const rows: HTMLElement[] = [];
   if (query) {
     const walk = (node: Bookmark, parents: string[]): void => {
@@ -89,12 +127,14 @@ function render(): void {
     };
     for (const node of syncableRoots(tree)) walk(node, []);
     back.hidden = true;
+    home.hidden = true;
     folderName.textContent = `Search results (${rows.length})`;
   } else {
     const children = currentId ? (findNode(currentId)?.children ?? []) : syncableRoots(tree);
     rows.push(...children.map((node) => row(node)));
     back.hidden = currentId === null;
-    folderName.textContent = findNode(currentId)?.title || 'All bookmarks';
+    home.hidden = currentId === browseStartId(tree, startPreference);
+    renderBreadcrumbs();
   }
   if (rows.length === 0) {
     const empty = element('p', 'empty');
@@ -107,7 +147,16 @@ function render(): void {
 async function loadBookmarks(): Promise<void> {
   try {
     tree = await chromeBookmarksApi().getTree();
-    if (currentId && !findNode(currentId)) currentId = null;
+    if (!initialized) {
+      const stored = (await chrome.storage.local.get('browseStartFolder')) as {
+        browseStartFolder?: string;
+      };
+      startPreference = stored.browseStartFolder ?? 'auto';
+      currentId = browseStartId(tree, startPreference);
+      initialized = true;
+    } else if (currentId && !findNode(currentId)) {
+      currentId = browseStartId(tree, startPreference);
+    }
     render();
   } catch (error) {
     items.textContent = `Could not load bookmarks: ${String(error)}`;
@@ -159,6 +208,18 @@ search.addEventListener('input', render);
 back.addEventListener('click', () => {
   const parentId = findNode(currentId)?.parentId;
   currentId = parentId === tree[0]?.id ? null : (parentId ?? null);
+  render();
+});
+home.addEventListener('click', () => {
+  currentId = browseStartId(tree, startPreference);
+  search.value = '';
+  render();
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.browseStartFolder) return;
+  startPreference = (changes.browseStartFolder.newValue as string | undefined) ?? 'auto';
+  currentId = browseStartId(tree, startPreference);
+  search.value = '';
   render();
 });
 settingsToggle.addEventListener('click', () => {

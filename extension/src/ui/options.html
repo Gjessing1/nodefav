@@ -19,7 +19,8 @@
         margin: 0.8rem 0 0.2rem;
         font-weight: 600;
       }
-      input {
+      input,
+      select {
         width: 100%;
         padding: 0.4rem;
         box-sizing: border-box;
@@ -79,6 +80,9 @@
       Shown in the admin page's device list so you can tell your browsers apart.
       <span id="deviceId"></span>
     </p>
+    <label for="browseStartFolder">Start folder when browsing</label>
+    <select id="browseStartFolder"></select>
+    <p class="hint">Saved on this browser. Search still covers all synced bookmarks.</p>
     <label for="serverUrl">Server URL</label>
     <input id="serverUrl" type="url" placeholder="https://nodefav.example.com" />
     <label for="token">Token</label>

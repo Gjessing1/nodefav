@@ -4,6 +4,7 @@ import type { BookmarkNode, TrashItem } from '@nodefav/shared';
 import {
   countDescendants,
   dropDestination,
+  emptyFolderCandidates,
   endKey,
   folderChoices,
   indexTree,
@@ -117,6 +118,24 @@ test('search matches title or URL, case-insensitively, with its folder path', ()
 test('descendant count covers the whole subtree', () => {
   assert.equal(countDescendants(tree()[0]!), 5);
   assert.equal(countDescendants(tree()[1]!), 0);
+});
+
+test('empty-folder cleanup chooses topmost empty subtrees and protects active roots', () => {
+  const roots = [
+    node('bar', 'i', { title: 'Bar' }, [
+      node('empty-parent', 'i', {}, [node('empty-child', 'i', {}, [])]),
+      node('with-link', 'r', {}, [node('link', 'i')]),
+      node('empty-after-link', 's', {}, []),
+    ]),
+    node('legacy', 'r', { title: 'Workspaces' }, [node('old-child', 'i', {}, [])]),
+    node('empty-active-root', 's', { title: 'Mobile bookmarks' }, []),
+  ];
+  assert.deepEqual(
+    emptyFolderCandidates(roots, (root) => root.title === 'Workspaces').map(
+      (folder) => folder.uuid,
+    ),
+    ['empty-parent', 'empty-after-link', 'legacy'],
+  );
 });
 
 test('trash groups one entry per deleted subtree, newest first', () => {

@@ -275,3 +275,23 @@ test('a localized Edge root uploaded by an older version is dropped, then deleta
   );
   assert.equal((await h.engine.status()).lastError, undefined);
 });
+
+test('deleting a cloud root never removes the browser-owned root', async () => {
+  const fake = new FakeBookmarks(['Favorites bar']);
+  const h = createHarness({ fake });
+  await h.engine.sync();
+  const root = (await h.server.getBookmarks()).roots[0];
+  assert.ok(root);
+  await h.server.postOps([
+    {
+      opId: 'remove-cloud-root',
+      deviceId: 'admin',
+      timestamp: Date.now(),
+      type: 'delete',
+      uuid: root.uuid,
+    },
+  ]);
+  await h.engine.sync({ force: true });
+  assert.equal((await fake.getTree())[0]?.children?.[0]?.title, 'Favorites bar');
+  assert.equal((await h.engine.status()).lastError, undefined);
+});

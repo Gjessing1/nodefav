@@ -14,6 +14,7 @@ import { compareVersions } from './device.js';
 import {
   countDescendants,
   dropDestination,
+  emptyFolderCandidates,
   endKey,
   folderChoices,
   indexTree,
@@ -169,6 +170,13 @@ function render(): void {
 function renderBookmarks(): void {
   if (!data) return;
   const container = document.getElementById('tree') as HTMLElement;
+  const cleanup = document.getElementById('removeEmpty') as HTMLButtonElement;
+  const emptyFolders = emptyFolderCandidates(
+    data.roots,
+    (root) => !syncableRootTitle(localTree, root.title),
+  );
+  cleanup.disabled = emptyFolders.length === 0;
+  cleanup.textContent = `Remove empty folders (${emptyFolders.length})`;
   const query = search.value;
   if (query.trim() !== '') {
     const hits = searchTree(data.roots, query);
@@ -218,6 +226,11 @@ function nodeItem(node: BookmarkNode): HTMLLIElement {
 function nodeRow(node: BookmarkNode): HTMLElement[] {
   if (!data) return [];
   const isRoot = node.parentUuid === null;
+  const removableRoot =
+    isRoot &&
+    node.type === 'folder' &&
+    !syncableRootTitle(localTree, node.title) &&
+    emptyFolderCandidates([node], () => true).some((candidate) => candidate.uuid === node.uuid);
   const meta = data.meta.get(node.uuid);
   const row = el('div', { className: 'row' });
   row.draggable = !isRoot;
@@ -335,6 +348,8 @@ function nodeRow(node: BookmarkNode): HTMLElement[] {
     action('Edit', 'Rename, change URL or move to another folder', () =>
       openForm('edit', node.uuid),
     );
+  }
+  if (!isRoot || removableRoot) {
     action('Delete', 'Move to trash', () => void remove(node));
   }
   row.append(actions);
@@ -467,6 +482,25 @@ async function remove(node: BookmarkNode): Promise<void> {
       : `“${node.title}”`;
   if (!confirm(`Move ${what} to the trash? It can be restored from the Trash tab.`)) return;
   if (await send([{ type: 'delete', uuid: node.uuid }])) say(`Moved “${node.title}” to trash.`);
+}
+
+async function removeEmptyFolders(): Promise<void> {
+  if (!data) return;
+  const folders = emptyFolderCandidates(
+    data.roots,
+    (root) => !syncableRootTitle(localTree, root.title),
+  );
+  if (folders.length === 0) return;
+  if (
+    !confirm(
+      `Move ${folders.length} empty folder${folders.length === 1 ? '' : 's'} to the trash? ` +
+        'This includes their empty subfolders and can be undone from the Trash tab.',
+    )
+  )
+    return;
+  if (await send(folders.map((folder) => ({ type: 'delete', uuid: folder.uuid })))) {
+    say(`Moved ${folders.length} empty folder${folders.length === 1 ? '' : 's'} to trash.`);
+  }
 }
 
 // -------------------------------------------------------------------- trash
@@ -602,6 +636,9 @@ for (const tab of document.querySelectorAll<HTMLButtonElement>('nav button[data-
   });
 }
 search.addEventListener('input', () => renderBookmarks());
+document.getElementById('removeEmpty')?.addEventListener('click', () => {
+  void removeEmptyFolders();
+});
 document.getElementById('refresh')?.addEventListener('click', () => {
   say('');
   void refresh();
