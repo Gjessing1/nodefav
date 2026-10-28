@@ -43,7 +43,7 @@ jobs:
     env:
       DOCKER_BUILDKIT: '1' # required for the Dockerfile's RUN --mount=type=cache npm cache
       # Deploy project (compose file + .env), bind-mounted into the job by the runner.
-      DEPLOY_DIR: /home/gjessing/docker/nodefav
+      DEPLOY_DIR: /home/gjessing/docker/Productivity/nodefav
     steps:
       - uses: actions/checkout@v4
 
@@ -99,7 +99,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           cat "$EXTENSION_ZIP" | docker run --rm -i \
-            -v /home/gjessing/docker/homepage/downloads:/downloads \
+            -v /home/gjessing/docker/Infrastructure/homepage/downloads:/downloads \
             alpine:3.20 sh -c 'cat > /downloads/nodefav-extension-next.zip && mv /downloads/nodefav-extension-next.zip /downloads/nodefav-extension-latest.zip'
 
       # Redeploy on the host, against the host daemon via the mounted Docker socket.
